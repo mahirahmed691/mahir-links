@@ -11,6 +11,7 @@ exclude = [
   "/_vercel/",
   "^mailto:",
   "linkedin\\.com",
+  "mahirahmed691\\.tech",  # blocks data-centre IPs; check by hand
   "instagram\\.com",
   "x\\.com",
   "twitter\\.com",
