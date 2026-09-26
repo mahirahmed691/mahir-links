@@ -1,0 +1,21 @@
+# Outbound link checker config (https://lychee.cli.rs)
+max_retries = 3
+retry_wait_time = 5
+timeout = 20
+accept = ["200..=299", "429"]
+user_agent = "Mozilla/5.0 (compatible; link-in-bio-monitor)"
+
+# Sites that block automated checkers return 403/999 even when the link is fine.
+# Excluding them avoids false alarms; check these manually when you change them.
+exclude = [
+  "/_vercel/",
+  "^mailto:",
+  "linkedin\\.com",
+  "instagram\\.com",
+  "x\\.com",
+  "twitter\\.com",
+  "fonts\\.googleapis\\.com",
+  "fonts\\.gstatic\\.com",
+  "gc\\.zgo\\.at",
+  "goatcounter\\.com",
+]

@@ -1,0 +1,106 @@
+# Stage -> prod on Vercel.
+#   stage:   build this commit, deploy it as a Vercel *preview*, smoke-test the preview.
+#   promote: promote that exact preview to production, then smoke-test the live site.
+# Nothing reaches production that didn't pass on the identical preview first.
+# Rollback: run this workflow manually with `ref` set to a previous good commit,
+# or use Instant Rollback in the Vercel dashboard (seconds, no rebuild).
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA or tag to deploy. Leave empty for the latest main. Set this to roll back."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vercel-production
+  cancel-in-progress: false
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  # Pin to a major version you've tested, e.g. "vercel@41". "latest" can change under you.
+  VERCEL_CLI: vercel@latest
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.meta.outputs.sha }}
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - id: meta
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate and build
+        run: node scripts/build.mjs
+
+      - name: Deploy preview
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          url=$(npx --yes "$VERCEL_CLI" deploy dist --yes --token "$VERCEL_TOKEN" --meta commitSha=${{ steps.meta.outputs.sha }})
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Preview: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test preview
+        env:
+          VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: scripts/smoke.sh "${{ steps.deploy.outputs.url }}" "${{ steps.meta.outputs.sha }}"
+
+  promote:
+    needs: stage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Add required reviewers to the "production" environment (Settings -> Environments)
+    # if you want a human approval between stage and prod.
+    environment:
+      name: production
+      url: ${{ steps.site.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - id: site
+        run: echo "url=$(node -p "require('./links.json').site.url")" >> "$GITHUB_OUTPUT"
+
+      # Redeploy the tested preview's exact files to production. (Vercel's promote
+      # endpoint rejects some preview deployments; redeploying the same artifact doesn't.)
+      - name: Ship tested preview to production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: npx --yes "$VERCEL_CLI" redeploy "${{ needs.stage.outputs.url }}" --target production --token "$VERCEL_TOKEN"
+
+      - name: Smoke test production
+        run: scripts/smoke.sh "${{ steps.site.outputs.url }}" "${{ needs.stage.outputs.sha }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Deploy"
+            echo "Live: ${{ steps.site.outputs.url }}"
+            echo "Commit: \`${{ needs.stage.outputs.sha }}\`"
+            echo "Promoted from: ${{ needs.stage.outputs.url }}"
+            echo "Rollback: Vercel dashboard -> Deployments -> Instant Rollback, or re-run this workflow with ref = last good SHA"
+          } >> "$GITHUB_STEP_SUMMARY"

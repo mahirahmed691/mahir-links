@@ -1,0 +1,15 @@
+{
+  "name": "link-in-bio",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node scripts/build.mjs --check",
+    "build": "node scripts/build.mjs",
+    "preview": "node scripts/build.mjs && npx --yes serve dist",
+    "og": "node scripts/build.mjs && npx --yes playwright@1 screenshot --viewport-size=1200,630 --wait-for-timeout=1500 dist/og.html assets/og.png && python3 -c \"from PIL import Image; Image.open('assets/og.png').convert('RGB').quantize(32, dither=Image.NONE).save('assets/og.png', optimize=True)\"",
+    "qr": "node -e \"const u=require('./links.json').site.url.replace(/\\/$/,'');process.stdout.write(u+'/?utm_source=qr')\" | xargs -I{} npx --yes qrcode@1 -t svg -e M -q 2 -o assets/qr.svg {}"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,98 @@
+# Observability: every 6 hours, check the live site is up, is serving the
+# latest main (drift detection), and that every outbound link still works.
+# Failures open (or update) a GitHub issue labelled `monitor`; recovery
+# closes it automatically.
+name: Monitor
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: monitor
+  cancel-in-progress: true
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Look up site URL
+        id: site
+        run: echo "url=$(node -p "require('./links.json').site.url")" >> "$GITHUB_OUTPUT"
+
+      - name: Uptime and drift check
+        id: health
+        continue-on-error: true
+        shell: bash  # explicit shell enables pipefail so tee doesn't mask failures
+        env:
+          SMOKE_ATTEMPTS: "3"
+          SMOKE_WAIT: "20"
+        run: scripts/smoke.sh "${{ steps.site.outputs.url }}" "$(git rev-parse HEAD)" 2>&1 | tee health.log
+
+      - name: Check outbound links on the live site
+        id: links
+        continue-on-error: true
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --config lychee.toml --no-progress "${{ steps.site.outputs.url }}"
+          output: lychee.md
+          fail: true
+
+      - name: Open, update or close the monitor issue
+        env:
+          HEALTH: ${{ steps.health.outcome }}
+          LINKS: ${{ steps.links.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SITE_URL: ${{ steps.site.outputs.url }}
+          # Optional: an incoming-webhook URL. Unset means GitHub issues only.
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          slack() {
+            [[ -z "$SLACK_WEBHOOK_URL" ]] && return 0
+            curl -fsS -X POST -H 'Content-Type: application/json' \
+              --data "$(node -e 'console.log(JSON.stringify({text: process.argv[1]}))' "$1")" \
+              "$SLACK_WEBHOOK_URL" >/dev/null || echo "Slack notification failed (not fatal)"
+          }
+
+          gh label create monitor --color B60205 --description "Automated site monitor" --force >/dev/null
+          open=$(gh issue list --label monitor --state open --json number --jq '.[0].number // empty')
+
+          if [[ "$HEALTH" == "success" && "$LINKS" == "success" ]]; then
+            if [[ -n "$open" ]]; then
+              gh issue close "$open" --comment "Recovered. All checks passed in $RUN_URL"
+              slack ":large_green_circle: $SITE_URL recovered. All checks passing. $RUN_URL"
+            fi
+            echo "All checks passed."
+            exit 0
+          fi
+
+          {
+            echo "Monitor run: $RUN_URL"
+            echo
+            echo "**Uptime and drift:** $HEALTH"
+            echo '```'; cat health.log 2>/dev/null || echo "no output"; echo '```'
+            echo
+            echo "**Outbound links:** $LINKS"
+            cat lychee.md 2>/dev/null || true
+            echo
+            echo "If prod is serving an older commit than main, a deploy failed or a manual rollback is still in place. See the README runbook."
+          } > report.md
+
+          if [[ -n "$open" ]]; then
+            gh issue comment "$open" --body-file report.md
+          else
+            url=$(gh issue create --title "Link page monitor is failing" --label monitor --body-file report.md)
+            # Alert once when an incident opens, not on every six-hourly repeat.
+            slack ":red_circle: $SITE_URL check failed (uptime: $HEALTH, links: $LINKS). $url"
+          fi
+          exit 1

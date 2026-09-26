@@ -1,0 +1,50 @@
+# Stage: every pull request is validated, built, link-checked, and the built
+# site is uploaded as a downloadable preview artifact. Nothing reaches prod
+# without passing this.
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate links.json
+        run: node scripts/build.mjs --check
+
+      - name: Build
+        run: node scripts/build.mjs
+
+      - name: Check every outbound link resolves
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --config lychee.toml --no-progress --root-dir ${{ github.workspace }}/dist dist/index.html
+          fail: true
+
+      - name: Upload stage preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-preview-${{ github.event.pull_request.number || github.run_id }}
+          path: dist
+          retention-days: 14
+
+      - name: Summary
+        run: |
+          {
+            echo "### Stage build"
+            echo "Links rendered: $(jq .links dist/version.json)"
+            echo "Commit: \`$(jq -r .sha dist/version.json)\`"
+            echo "Download the **stage-preview** artifact above and open index.html to review."
+          } >> "$GITHUB_STEP_SUMMARY"

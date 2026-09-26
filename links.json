@@ -1,0 +1,241 @@
+{
+  "site": {
+    "url": "https://mahir-links.vercel.app"
+  },
+  "profile": {
+    "name": "Mahir Ahmed",
+    "bio": "DevOps engineer by day, studio director the rest of the time. I build apps, shops and the tills behind them, then keep them running.",
+    "avatar": "https://avatars.githubusercontent.com/u/19246093?v=4",
+    "hats": [
+      "DevOps engineer",
+      "Director, Prolific Digital Tech",
+      "Husband",
+      "Home cook",
+      "Travel blogger"
+    ],
+    "sticker": "🇧🇩 × 🇬🇧",
+    "clock": {
+      "city": "Manchester",
+      "timezone": "Europe/London",
+      "fallback": "Based here, shipping from here.",
+      "moods": [
+        {
+          "from": 6,
+          "to": 9,
+          "text": "Coffee first, then deploys."
+        },
+        {
+          "from": 9,
+          "to": 17,
+          "text": "On the tools. Replies might lag."
+        },
+        {
+          "from": 17,
+          "to": 20,
+          "text": "Studio hours. Shipping something."
+        },
+        {
+          "from": 20,
+          "to": 23,
+          "text": "In the kitchen, probably."
+        },
+        {
+          "from": 23,
+          "to": 6,
+          "text": "Asleep. Pager on, fingers crossed."
+        }
+      ]
+    }
+  },
+  "availability": {
+    "enabled": false,
+    "status": "open",
+    "text": "Taking on new studio projects",
+    "url": "https://www.prolificdigitaltech.co.uk/enquire"
+  },
+  "links": [
+    {
+      "title": "Read the blog",
+      "description": "DevOps tools, Kubernetes from the ground up, and more",
+      "url": "https://mahirahmed691.tech",
+      "featured": true,
+      "tag": "Blog"
+    },
+    {
+      "title": "Work with Prolific Digital Tech",
+      "description": "App, web and operations work. Start an enquiry",
+      "url": "https://www.prolificdigitaltech.co.uk/enquire",
+      "tag": "Enquire"
+    },
+    {
+      "title": "Cloud Agnostic",
+      "url": "https://github.com/mahirahmed691/mahirahmed691/blob/main/assets/Cloud%20Agnostic.pdf",
+      "tag": "Free PDF",
+      "description": "My ebook on building without vendor lock-in"
+    },
+    {
+      "title": "The Building Blocks of DevOps",
+      "url": "https://github.com/mahirahmed691/mahirahmed691/blob/main/assets/The%20Building%20blocks-%20Devops.pdf",
+      "tag": "Free PDF",
+      "description": "My ebook on the foundations, start to finish"
+    },
+    {
+      "title": "Posts on DEV",
+      "description": "DevOps in FinTech, cloud migration, Linux commands and clean code",
+      "url": "https://dev.to/mahirahmed691",
+      "tag": "Articles"
+    }
+  ],
+  "businesses": {
+    "title": "Things I've shipped",
+    "more": {
+      "label": "See the studio",
+      "url": "https://www.prolificdigitaltech.co.uk/"
+    },
+    "items": [
+      {
+        "name": "FlickFinder",
+        "description": "Household watch lists from what you already watched.",
+        "url": "https://flickfinder-nu.vercel.app",
+        "status": "Live",
+        "kind": "Own product",
+        "stack": [
+          "Next.js",
+          "Vercel"
+        ],
+        "icon": "🎬",
+        "image": "https://www.prolificdigitaltech.co.uk/_next/image?url=%2Fpreviews%2Fflickfinder.jpg&w=640&q=75"
+      },
+      {
+        "name": "Ceevie",
+        "description": "A UK CV studio that interviews you out loud.",
+        "url": "https://www.prolificdigitaltech.co.uk/products/ceevie",
+        "status": "Parked",
+        "kind": "Own product",
+        "stack": [
+          "Next.js",
+          "Supabase",
+          "Stripe"
+        ],
+        "enabled": false,
+        "icon": "🎙️"
+      },
+      {
+        "name": "Sakinah",
+        "description": "Prayer, qibla, Qur’an, and a private daily practice.",
+        "url": "https://www.mysakinah.app",
+        "status": "Live",
+        "kind": "Own product",
+        "stack": [
+          "Expo",
+          "Convex",
+          "Clerk"
+        ],
+        "icon": "🕌",
+        "badge": "New",
+        "image": "assets/sakinah.webp",
+        "appStore": "https://apps.apple.com/app/id6790078075",
+        "badgeUntil": "2026-10-25"
+      },
+      {
+        "name": "Motiv",
+        "description": "Self-drive Mercedes C-Class hire in Merseyside for weddings, graduations and birthdays. No phone calls.",
+        "url": "https://www.motivcarhire.com",
+        "status": "Live",
+        "kind": "Own product",
+        "stack": [
+          "Next.js",
+          "Supabase",
+          "Stripe"
+        ],
+        "icon": "🚗",
+        "badge": "New",
+        "image": "https://www.motivcarhire.com/_next/image?url=%2Fsite%2Fc300-night.jpg&w=640&q=75",
+        "badgeUntil": "2026-10-25"
+      },
+      {
+        "name": "KARV'D",
+        "description": "Steak, chips and sauces. Pre-order and Sunday collection.",
+        "url": "https://www.karvd.uk",
+        "status": "Live",
+        "kind": "Commission",
+        "stack": [
+          "Next.js",
+          "Supabase",
+          "Stripe"
+        ],
+        "icon": "🥩",
+        "image": "https://www.prolificdigitaltech.co.uk/_next/image?url=%2Fpreviews%2Fkarvd.jpg&w=640&q=75"
+      },
+      {
+        "name": "Kiano London",
+        "description": "Our own house of the jubbah and the thobe. Handmade in Dubai.",
+        "url": "https://kiano.london",
+        "status": "Live",
+        "kind": "Own house",
+        "stack": [
+          "React",
+          "Clerk",
+          "Neon"
+        ],
+        "icon": "🧵",
+        "image": "https://www.prolificdigitaltech.co.uk/_next/image?url=%2Fpreviews%2Fkiano-london.jpg&w=640&q=75"
+      },
+      {
+        "name": "Sweet Dezire",
+        "description": "A dessert till for family. Menu, loyalty and a live kitchen queue.",
+        "url": "https://sweetdezire.co.uk",
+        "status": "Live",
+        "kind": "Family",
+        "stack": [
+          "Expo",
+          "Next.js",
+          "Supabase"
+        ],
+        "icon": "🍨",
+        "image": "https://www.prolificdigitaltech.co.uk/_next/image?url=%2Fpreviews%2Fsweet-dezire.jpg&w=640&q=75",
+        "alsoOn": "iOS App Store"
+      },
+      {
+        "name": "Blanco Coffee House",
+        "description": "Hours, boards and the shop on Fiveways Parade.",
+        "url": "https://blancocoffeehouse.com",
+        "status": "Live",
+        "kind": "Commission",
+        "stack": [
+          "HTML",
+          "CSS",
+          "Clerk"
+        ],
+        "icon": "☕",
+        "image": "https://www.prolificdigitaltech.co.uk/_next/image?url=%2Fpreviews%2Fblanco-coffee-house.jpg&w=640&q=75"
+      }
+    ]
+  },
+  "socials": [
+    {
+      "label": "GitHub",
+      "url": "https://github.com/mahirahmed691"
+    },
+    {
+      "label": "LinkedIn",
+      "url": "https://www.linkedin.com/in/mahir-ahmed-84a346149/"
+    },
+    {
+      "label": "daily.dev",
+      "url": "https://app.daily.dev/mahirahmed691"
+    },
+    {
+      "label": "Email",
+      "url": "mailto:mahirahmed691@gmail.com"
+    }
+  ],
+  "theme": {
+    "accent": "#6F4BFF",
+    "pop": "#FFD23F"
+  },
+  "analytics": {
+    "vercel": true,
+    "goatcounter": "mahirahmed691"
+  }
+}
