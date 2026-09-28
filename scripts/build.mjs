@@ -56,7 +56,13 @@ if (contact && config.site?.url) {
 writeFileSync(join(out, "index.html"), renderPage());
 writeFileSync(join(out, "404.html"), render404());
 writeFileSync(join(out, ".nojekyll"), "");
-if (existsSync(join(root, "vercel.json"))) cpSync(join(root, "vercel.json"), join(out, "vercel.json"));
+if (existsSync(join(root, "vercel.json"))) {
+  // outputDirectory tells the Git build where this script wrote the site.
+  // The prebuilt deploy uploads dist/ itself, so that setting must not go with it.
+  const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8"));
+  delete vercel.outputDirectory;
+  writeFileSync(join(out, "vercel.json"), JSON.stringify(vercel, null, 2) + "\n");
+}
 
 // Private /admin stats page (Vercel function). Only built when GoatCounter is configured.
 if (gc && existsSync(join(root, "functions", "admin.mjs"))) {
