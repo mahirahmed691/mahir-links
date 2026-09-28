@@ -209,6 +209,22 @@
         ],
         "icon": "☕",
         "image": "https://www.prolificdigitaltech.co.uk/_next/image?url=%2Fpreviews%2Fblanco-coffee-house.jpg&w=640&q=75"
+      },
+      {
+        "name": "RAPIDER",
+        "description": "Discovery call, then a client area. Goals, action plans and session notes.",
+        "url": "https://rapider.co.uk",
+        "status": "Live",
+        "kind": "Commission",
+        "stack": [
+          "HTML",
+          "Netlify",
+          "CoachAccountable"
+        ],
+        "icon": "⚡",
+        "badge": "New",
+        "image": "assets/rapider.webp",
+        "badgeUntil": "2026-10-25"
       }
     ]
   },
