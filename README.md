@@ -114,7 +114,9 @@ No cookies and no personal data, so no consent banner is needed.
 
 Setup, once, in Vercel → Project → Settings → Environment Variables (Production):
 
-- `ADMIN_PASSWORD`: the page password. Any username works at the prompt.
+- `ADMIN_PASSWORD`: your password. Any username works at the prompt. Changing it also ends every temporary link.
+
+Once you are signed in, **Temporary access** at the bottom of the page makes a link for one person, lasting 1, 7, or 30 days. They can view the stats until it expires. They do not get your password and cannot make links of their own. There is no per-person off switch: use a short duration, or change `ADMIN_PASSWORD` to end every link at once.
 - `GOATCOUNTER_TOKEN`: a GoatCounter API key (GoatCounter → your name → API → New API key, with read permissions only).
 
 Then redeploy so the function picks them up. Without them the page explains what's missing instead of failing. Wrong passwords are slowed down, and the page is never cached or indexed.
