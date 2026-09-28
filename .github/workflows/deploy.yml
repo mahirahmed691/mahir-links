@@ -56,7 +56,9 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          url=$(npx --yes "$VERCEL_CLI" deploy dist --yes --token "$VERCEL_TOKEN" --meta commitSha=${{ steps.meta.outputs.sha }})
+          # --prebuilt publishes .vercel/output, including the /admin function.
+          # `vercel deploy dist` serves that file as static JavaScript and /admin 404s.
+          url=$(npx --yes "$VERCEL_CLI" deploy --prebuilt --yes --token "$VERCEL_TOKEN" --meta commitSha=${{ steps.meta.outputs.sha }})
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Preview: $url" >> "$GITHUB_STEP_SUMMARY"
 
