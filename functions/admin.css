@@ -38,6 +38,11 @@ th { color: var(--muted); font-weight: 600; }
 .bar-track { height: 8px; background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 99px; overflow: hidden; }
 .bar-fill { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
 .bar-num { font-variant-numeric: tabular-nums; font-weight: 600; }
+.share { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; margin-top: 0.75rem; }
+.share label { display: grid; gap: 0.25rem; font-size: 0.8125rem; font-weight: 600; color: var(--muted); }
+.share input, .share select, .share button { font: inherit; color: var(--ink); background: var(--bg); border: 1.5px solid var(--line); border-radius: 8px; padding: 0.5rem 0.7rem; min-height: 40px; }
+.share button { background: var(--accent); color: #fff; font-weight: 700; border-color: transparent; cursor: pointer; }
+.linkbox { word-break: break-all; background: var(--bg); border: 1.5px solid var(--line); border-radius: 8px; padding: 0.7rem 0.8rem; margin: 0.75rem 0 0; }
 .empty, .note { color: var(--muted); font-size: 0.875rem; }
 .note { margin-top: 1.25rem; }
 code { font-size: 0.85em; background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 0.05rem 0.3rem; }

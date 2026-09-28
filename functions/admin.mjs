@@ -1,6 +1,6 @@
 // /admin: password-protected stats dashboard, rendered on the server.
 // Needs two environment variables in Vercel (Project → Settings → Environment Variables):
-//   ADMIN_PASSWORD     the password for this page (any username works)
+//   ADMIN_PASSWORD     your password for this page (any username works). Also signs guest links.
 //   GOATCOUNTER_TOKEN  a GoatCounter API key with read access
 // The GoatCounter key never reaches the browser; this function fetches the numbers and returns plain HTML.
 import crypto from "node:crypto";
@@ -9,6 +9,7 @@ import crypto from "node:crypto";
 const site = /*SITE*/ {};
 
 const RANGES = { today: { label: "Today", days: 1 }, "7d": { label: "7 days", days: 7 }, "30d": { label: "30 days", days: 30 } };
+const SHARE_DAYS = [1, 7, 30];
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -20,8 +21,26 @@ export default async function handler(req, res) {
     res.statusCode = 503;
     return send(res, page("Admin not set up", `<p class="note">Add <code>ADMIN_PASSWORD</code> and <code>GOATCOUNTER_TOKEN</code> in Vercel → Project → Settings → Environment Variables, then redeploy.</p>`));
   }
-  if (!authorised(req.headers.authorization, password)) {
-    await new Promise((r) => setTimeout(r, 400)); // slow down password guessing
+  const owner = isOwner(req, password);
+  const guestToken = queryValue(req, "guest");
+  if (guestToken && !owner) {
+    const shared = verifyGuest(guestToken, password);
+    if (!shared) {
+      await pause();
+      res.statusCode = 401;
+      res.setHeader("WWW-Authenticate", 'Basic realm="Stats", charset="UTF-8"');
+      return send(res, page("Link expired", `<p class="note">This access link is invalid or has expired. Ask for a new one.</p>`));
+    }
+    setGuestCookie(res, guestToken, shared.exp);
+    const range = queryValue(req, "range");
+    res.statusCode = 302;
+    res.setHeader("Location", RANGES[range] ? `/admin?range=${range}` : "/admin");
+    return res.end();
+  }
+
+  const guest = owner ? null : verifyGuest(cookieValue(req, "admin_guest"), password);
+  if (!owner && !guest) {
+    await pause();
     res.statusCode = 401;
     res.setHeader("WWW-Authenticate", 'Basic realm="Stats", charset="UTF-8"');
     return send(res, page("Sign in required", `<p class="note">This page is private.</p>`));
@@ -29,9 +48,10 @@ export default async function handler(req, res) {
 
   const rangeParam = queryValue(req, "range");
   const rangeKey = RANGES[rangeParam] ? rangeParam : "7d";
+  const access = owner ? { owner: true, share: shareLink(req, password) } : { owner: false, guest };
   try {
     const data = await load(globalThis.__adminFetch || fetch, token, rangeKey);
-    send(res, page("Stats", render(data, rangeKey)));
+    send(res, page("Stats", render(data, rangeKey, access)));
   } catch (err) {
     console.error("admin: GoatCounter request failed", err);
     res.statusCode = 502;
@@ -50,12 +70,75 @@ function queryValue(req, key) {
   }
 }
 
-function authorised(header, password) {
+const pause = () => new Promise((r) => setTimeout(r, 400));
+
+function isOwner(req, password) {
+  const header = req.headers.authorization;
   if (!header || !header.startsWith("Basic ")) return false;
   const decoded = Buffer.from(header.slice(6), "base64").toString("utf8");
   const given = decoded.slice(decoded.indexOf(":") + 1);
   const h = (s) => crypto.createHash("sha256").update(s).digest();
   return crypto.timingSafeEqual(h(given), h(password));
+}
+
+function signGuest(label, exp, secret) {
+  const payload = Buffer.from(JSON.stringify({ label, exp })).toString("base64url");
+  const sig = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+  return `${payload}.${sig}`;
+}
+
+function verifyGuest(token, secret) {
+  if (typeof token !== "string") return null;
+  const dot = token.indexOf(".");
+  if (dot <= 0) return null;
+  const payload = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+  const expected = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  let data;
+  try { data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")); }
+  catch { return null; }
+  if (!data || typeof data.label !== "string" || data.label.length > 40 || !Number.isFinite(data.exp) || data.exp < Date.now()) return null;
+  return data;
+}
+
+function shareLink(req, password) {
+  const raw = queryValue(req, "for");
+  if (!raw) return null;
+  const label = raw.trim().replace(/\s+/g, " ");
+  if (!label || label.length > 40) return { error: "Use a name of 40 characters or fewer." };
+  const days = Number(queryValue(req, "days"));
+  if (!SHARE_DAYS.includes(days)) return { error: "Choose 1, 7, or 30 days." };
+  const exp = Date.now() + days * 864e5;
+  const guest = signGuest(label, exp, password);
+  return { url: `${requestOrigin(req)}/admin?guest=${guest}`, label, exp };
+}
+
+function requestOrigin(req) {
+  const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost";
+  const proto = req.headers["x-forwarded-proto"] || "https";
+  return `${proto}://${String(host).split(",")[0].trim()}`;
+}
+
+function cookieValue(req, name) {
+  const raw = req.headers.cookie || "";
+  for (const part of raw.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
+  }
+  return "";
+}
+
+function setGuestCookie(res, token, exp) {
+  const maxAge = Math.max(0, Math.floor((exp - Date.now()) / 1000));
+  res.setHeader("Set-Cookie", `admin_guest=${encodeURIComponent(token)}; HttpOnly; Secure; SameSite=Lax; Path=/admin; Max-Age=${maxAge}`);
+}
+
+function when(exp) {
+  return new Date(exp).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
 }
 
 // ---------- data ----------
@@ -194,7 +277,22 @@ function trend(now, before, rangeKey) {
   return `<span class="trend ${pct > 0 ? "up" : "down"}">${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs ${period}</span>`;
 }
 
-function render(d, rangeKey) {
+function accessNote(access) {
+  if (!access.owner) return `<p class="note">Viewing as ${esc(access.guest.label)} until ${esc(when(access.guest.exp))}.</p>`;
+  const made = access.share?.url
+    ? `<p class="linkbox"><a href="${esc(access.share.url)}">${esc(access.share.url)}</a></p><p class="note">For ${esc(access.share.label)} until ${esc(when(access.share.exp))}. Anyone with this link can view stats until then.</p>`
+    : access.share?.error ? `<p class="note">${esc(access.share.error)}</p>` : "";
+  const days = SHARE_DAYS.map((d) => `<option value="${d}"${d === 7 ? " selected" : ""}>${d === 1 ? "1 day" : d + " days"}</option>`).join("");
+  return `<section class="panel wide"><h2>Temporary access</h2>
+<p class="note">Create a link for someone. They can view these stats until it expires. They do not get your password, and they cannot create links. Changing your admin password ends every link.</p>
+<form class="share" action="/admin" method="get">
+<label>Name <input name="for" maxlength="40" required placeholder="Ada" autocomplete="off"></label>
+<label>For <select name="days">${days}</select></label>
+<button type="submit">Create link</button>
+</form>${made}</section>`;
+}
+
+function render(d, rangeKey, access) {
   const ctr = d.visitors ? Math.round((d.clicks / d.visitors) * 100) : 0;
   const tabs = Object.entries(RANGES).map(([k, r]) => `<a href="/admin?range=${k}"${k === rangeKey ? ' aria-current="page"' : ""}>${esc(r.label)}</a>`).join("");
   const updated = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
@@ -223,5 +321,6 @@ function render(d, rangeKey) {
   <section class="panel"><h2>Countries</h2>${bars(d.locations)}</section>
   <section class="panel"><h2>Screen sizes</h2>${bars(d.devices)}</section>
 </div>
-<p class="note">Updated ${esc(updated)} UK time. GoatCounter's figures can lag live traffic by up to two hours. <a href="https://${esc(site.goatcounter)}.goatcounter.com">Full GoatCounter dashboard</a></p>`;
+<p class="note">Updated ${esc(updated)} UK time. GoatCounter's figures can lag live traffic by up to two hours. <a href="https://${esc(site.goatcounter)}.goatcounter.com">Full GoatCounter dashboard</a></p>
+${accessNote(access)}`;
 }
