@@ -2,10 +2,10 @@
 // Validates links.json and renders a static site into dist/.
 // Usage: node scripts/build.mjs          -> validate + build
 //        node scripts/build.mjs --check  -> validate only
-import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync, rmSync, readdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -56,33 +56,117 @@ if (contact && config.site?.url) {
 writeFileSync(join(out, "index.html"), renderPage());
 writeFileSync(join(out, "404.html"), render404());
 writeFileSync(join(out, ".nojekyll"), "");
-if (existsSync(join(root, "vercel.json"))) {
-  // outputDirectory tells the Git build where this script wrote the site.
-  // The prebuilt deploy uploads dist/ itself, so that setting must not go with it.
-  const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8"));
-  delete vercel.outputDirectory;
-  writeFileSync(join(out, "vercel.json"), JSON.stringify(vercel, null, 2) + "\n");
-}
 
-// Private /admin stats page (Vercel function). Only built when GoatCounter is configured.
-if (gc && existsSync(join(root, "functions", "admin.mjs"))) {
-  mkdirSync(join(out, "api"), { recursive: true });
-  const names = {};
-  for (const l of config.links) names[slug(l.title)] = l.title;
-  for (const s of config.socials || []) names[slug(s.label)] = s.label;
-  for (const b of config.businesses?.items || []) names[slug(b.name)] = b.name;
-  names["see-the-studio"] = "See the studio";
-  const siteData = { name: config.profile.name, goatcounter: gc, businesses: businesses.map((b) => slug(b.name)), names };
-  const fn = readFileSync(join(root, "functions", "admin.mjs"), "utf8").replace("/*SITE*/ {}", JSON.stringify(siteData));
-  writeFileSync(join(out, "api", "admin.mjs"), fn);
+// Private /admin stats page. The function has to live outside dist/: anything inside the
+// output directory is a public static file, which is why /admin was a platform 404 and
+// /api/admin.mjs was downloadable source. Git builds pick up api/admin.mjs; the CLI
+// deploy publishes the same file as a function via .vercel/output.
+const adminFn = gc && existsSync(join(root, "functions", "admin.mjs")) ? renderAdminFunction() : null;
+rmSync(join(root, "api"), { recursive: true, force: true });
+if (adminFn) {
+  mkdirSync(join(root, "api"), { recursive: true });
+  writeFileSync(join(root, "api", "admin.mjs"), adminFn);
   cpSync(join(root, "functions", "admin.css"), join(out, "admin.css"));
 }
 writeFileSync(
   join(out, "version.json"),
   JSON.stringify({ sha, builtAt, links: links.length, businesses: businesses.length }, null, 2) + "\n"
 );
+emitVercelOutput(adminFn);
 
-console.log(`Built dist/ with ${links.length} links and ${businesses.length} businesses (sha ${sha.slice(0, 7)}).`);
+console.log(`Built dist/ with ${links.length} links and ${businesses.length} businesses (sha ${sha.slice(0, 7)})${adminFn ? ", admin function included" : ""}.`);
+
+function renderAdminFunction() {
+  const names = {};
+  for (const l of config.links) names[slug(l.title)] = l.title;
+  for (const s of config.socials || []) names[slug(s.label)] = s.label;
+  for (const b of config.businesses?.items || []) names[slug(b.name)] = b.name;
+  names["see-the-studio"] = "See the studio";
+  const siteData = { name: config.profile.name, goatcounter: gc, businesses: businesses.map((b) => slug(b.name)), names };
+  return readFileSync(join(root, "functions", "admin.mjs"), "utf8").replace("/*SITE*/ {}", JSON.stringify(siteData));
+}
+
+// Build Output API so `vercel deploy --prebuilt` runs /api/admin instead of serving it as a file.
+function emitVercelOutput(fnSource) {
+  const vcOut = join(root, ".vercel", "output");
+  rmSync(vcOut, { recursive: true, force: true });
+  const staticDir = join(vcOut, "static");
+  cpSync(out, staticDir, {
+    recursive: true,
+    filter: (src) => {
+      const rel = relative(out, src);
+      if (!rel) return true;
+      return rel !== "api" && rel !== `api${sep}` && !rel.startsWith(`api${sep}`) && rel !== "vercel.json";
+    },
+  });
+
+  const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8"));
+  const routes = [];
+  if (vercel.cleanUrls) {
+    const loc = vercel.trailingSlash ? "/$1/" : "/$1";
+    routes.push(
+      { src: "^/(?:(.+)/)?index(?:\\.html)?/?$", headers: { Location: loc }, status: 308 },
+      { src: "^/(.*)\\.html/?$", headers: { Location: loc }, status: 308 }
+    );
+  }
+  if (vercel.trailingSlash === false) {
+    routes.push({ src: "^/(.*)\\/$", headers: { Location: "/$1" }, status: 308 });
+  }
+  for (const rule of vercel.headers || []) {
+    const headers = {};
+    for (const { key, value } of rule.headers) headers[key] = value;
+    routes.push({ src: compileSource(rule.source), headers, continue: true });
+  }
+  routes.push({ handle: "filesystem" });
+  if (fnSource) {
+    for (const rule of vercel.rewrites || []) {
+      if (typeof rule.destination !== "string") fail([`Rewrite destination must be a path: ${rule.source}`]);
+      routes.push({ src: compileSource(rule.source), dest: rule.destination, check: true });
+    }
+    const fnDir = join(vcOut, "functions", "api", "admin.func");
+    mkdirSync(fnDir, { recursive: true });
+    writeFileSync(join(fnDir, "admin.mjs"), fnSource);
+    writeFileSync(join(fnDir, ".vc-config.json"), JSON.stringify({
+      runtime: "nodejs22.x",
+      handler: "admin.mjs",
+      launcherType: "Nodejs",
+      shouldAddHelpers: true,
+    }, null, 2) + "\n");
+  }
+  routes.push({ handle: "miss" });
+  routes.push({ src: "^/.*", dest: "/404", status: 404, check: true });
+
+  writeFileSync(join(vcOut, "config.json"), JSON.stringify({
+    version: 3,
+    routes,
+    overrides: htmlOverrides(staticDir),
+  }, null, 2) + "\n");
+}
+
+// path-to-regexp@6.1.0 with { strict, sensitive, delimiter: "/" }, for the sources in vercel.json.
+function compileSource(source) {
+  if (!source.startsWith("/")) fail([`Unsupported Vercel route source: ${source}`]);
+  let src = "^";
+  for (const segment of source.split("/").slice(1)) {
+    if (segment === "(.*)") src += "(?:\\/(.*))";
+    else if (/[()*?+]/.test(segment)) fail([`Unsupported Vercel route source: ${source}`]);
+    else src += "\\/" + segment.replace(/[.+^${}|[\]\\]/g, "\\$&");
+  }
+  return src + "$";
+}
+
+function htmlOverrides(dir, base = "") {
+  const overrides = {};
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const rel = base ? `${base}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) Object.assign(overrides, htmlOverrides(join(dir, entry.name), rel));
+    else if (entry.name.endsWith(".html") && rel !== "index.html") {
+      const clean = rel.slice(0, -".html".length).replace(/\/index$/, "");
+      overrides[rel] = { path: clean };
+    }
+  }
+  return overrides;
+}
 
 // --- data -------------------------------------------------------------------
 

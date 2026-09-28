@@ -27,7 +27,8 @@ export default async function handler(req, res) {
     return send(res, page("Sign in required", `<p class="note">This page is private.</p>`));
   }
 
-  const rangeKey = RANGES[req.query?.range] ? req.query.range : "7d";
+  const rangeParam = queryValue(req, "range");
+  const rangeKey = RANGES[rangeParam] ? rangeParam : "7d";
   try {
     const data = await load(globalThis.__adminFetch || fetch, token, rangeKey);
     send(res, page("Stats", render(data, rangeKey)));
@@ -35,6 +36,17 @@ export default async function handler(req, res) {
     console.error("admin: GoatCounter request failed", err);
     res.statusCode = 502;
     send(res, page("Stats unavailable", `<p class="note">Couldn't reach GoatCounter: ${esc(err.message)}. Try again in a minute.</p>`));
+  }
+}
+
+function queryValue(req, key) {
+  const fromHelper = req.query?.[key];
+  if (typeof fromHelper === "string") return fromHelper;
+  try {
+    const url = typeof req.url === "string" && req.url.startsWith("http") ? new URL(req.url) : new URL(req.url || "/", "http://localhost");
+    return url.searchParams.get(key);
+  } catch {
+    return null;
   }
 }
 
