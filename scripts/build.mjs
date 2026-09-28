@@ -57,10 +57,9 @@ writeFileSync(join(out, "index.html"), renderPage());
 writeFileSync(join(out, "404.html"), render404());
 writeFileSync(join(out, ".nojekyll"), "");
 
-// Private /admin stats page. The function has to live outside dist/: anything inside the
-// output directory is a public static file, which is why /admin was a platform 404 and
-// /api/admin.mjs was downloadable source. Git builds pick up api/admin.mjs; the CLI
-// deploy publishes the same file as a function via .vercel/output.
+// Private /admin stats page. Vercel uses .vercel/output when this build creates it.
+// The function directory name is the URL, so admin.func serves /admin. A rewrite to
+// /api/admin never runs: the 404 page is served instead.
 const adminFn = gc && existsSync(join(root, "functions", "admin.mjs")) ? renderAdminFunction() : null;
 rmSync(join(root, "api"), { recursive: true, force: true });
 if (adminFn) {
@@ -118,21 +117,9 @@ function emitVercelOutput(fnSource) {
     routes.push({ src: compileSource(rule.source), headers, continue: true });
   }
   routes.push({ handle: "filesystem" });
-  if (fnSource) {
-    for (const rule of vercel.rewrites || []) {
-      if (typeof rule.destination !== "string") fail([`Rewrite destination must be a path: ${rule.source}`]);
-      routes.push({ src: compileSource(rule.source), dest: rule.destination, check: true });
-    }
-    const fnDir = join(vcOut, "functions", "api", "admin.func");
-    mkdirSync(fnDir, { recursive: true });
-    writeFileSync(join(fnDir, "admin.mjs"), fnSource);
-    writeFileSync(join(fnDir, ".vc-config.json"), JSON.stringify({
-      runtime: "nodejs22.x",
-      handler: "admin.mjs",
-      launcherType: "Nodejs",
-      shouldAddHelpers: true,
-    }, null, 2) + "\n");
-  }
+  // The function path is the URL. A rewrite from /admin to /api/admin is skipped
+  // (check fails, then the 404 page wins) even though /api/admin itself runs.
+  if (fnSource) writeAdminFunction(vcOut, fnSource);
   routes.push({ handle: "miss" });
   routes.push({ src: "^/.*", dest: "/404", status: 404, check: true });
 
@@ -153,6 +140,20 @@ function compileSource(source) {
     else src += "\\/" + segment.replace(/[.+^${}|[\]\\]/g, "\\$&");
   }
   return src + "$";
+}
+
+function writeAdminFunction(vcOut, fnSource) {
+  const vcConfig = JSON.stringify({
+    runtime: "nodejs22.x",
+    handler: "admin.mjs",
+    launcherType: "Nodejs",
+    shouldAddHelpers: true,
+  }, null, 2) + "\n";
+  for (const fnDir of [join(vcOut, "functions", "admin.func"), join(vcOut, "functions", "api", "admin.func")]) {
+    mkdirSync(fnDir, { recursive: true });
+    writeFileSync(join(fnDir, "admin.mjs"), fnSource);
+    writeFileSync(join(fnDir, ".vc-config.json"), vcConfig);
+  }
 }
 
 function htmlOverrides(dir, base = "") {
