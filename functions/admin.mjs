@@ -55,7 +55,8 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error("admin: GoatCounter request failed", err);
     res.statusCode = 502;
-    send(res, page("Stats unavailable", `<p class="note">Couldn't reach GoatCounter: ${esc(err.message)}. Try again in a minute.</p>`));
+    const note = `<p class="note">Couldn't reach GoatCounter: ${esc(err.message)}. Try again in a minute.</p>`;
+    send(res, page("Stats unavailable", owner ? note + accessNote(access) : note));
   }
 }
 
@@ -71,6 +72,7 @@ function queryValue(req, key) {
 }
 
 const pause = () => new Promise((r) => setTimeout(r, 400));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function isOwner(req, password) {
   const header = req.headers.authorization;
@@ -150,21 +152,45 @@ async function load(fetchImpl, token, rangeKey) {
   const fmt = (d) => d.toISOString().slice(0, 19) + "Z";
   const q = `start=${fmt(start)}&end=${fmt(end)}`;
   const base = `https://${site.goatcounter}.goatcounter.com/api/v0`;
-  const get = (path) => getRange(path, q);
-  const getRange = async (path, query) => {
-    const r = await fetchImpl(`${base}${path}${path.includes("?") ? "&" : "?"}${query}`, {
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    });
-    if (!r.ok) throw new Error(`${path.split("?")[0]} returned ${r.status}`);
-    return r.json();
+  // GoatCounter allows about 4 requests a second. These used to fire back to back, so the last call (/stats/sizes) returned 429 and the whole page failed.
+  let lastCall = 0;
+  const getRange = async (path, query, { required = true } = {}) => {
+    const url = `${base}${path}${path.includes("?") ? "&" : "?"}${query}`;
+    const label = path.split("?")[0];
+    let wait = 800;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const gap = 300 - (Date.now() - lastCall);
+      if (gap > 0) await sleep(gap);
+      lastCall = Date.now();
+      const r = await fetchImpl(url, {
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      });
+      if (r.status === 429) {
+        const retryAfter = Number(typeof r.headers?.get === "function" ? r.headers.get("retry-after") : r.headers?.["retry-after"]);
+        wait = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 2000) : wait;
+        if (attempt < 3) {
+          await sleep(wait);
+          wait = Math.min(wait * 2, 2000);
+          continue;
+        }
+        if (!required) return { stats: [], hits: [] };
+        throw new Error(`${label} returned 429`);
+      }
+      if (!r.ok) {
+        if (!required) return { stats: [], hits: [] };
+        throw new Error(`${label} returned ${r.status}`);
+      }
+      return r.json();
+    }
+    if (!required) return { stats: [], hits: [] };
+    throw new Error(`${label} returned 429`);
   };
-  // Sequential: GoatCounter allows ~4 requests/second.
-  const hits = await get("/stats/hits?limit=100");
+  const hits = await getRange("/stats/hits?limit=100", q);
   const prevStart = new Date(start.getTime() - RANGES[rangeKey].days * 864e5);
   const prevHits = await getRange("/stats/hits?limit=100", `start=${fmt(prevStart)}&end=${fmt(start)}`);
-  const refs = await get("/stats/toprefs?limit=8");
-  const locations = await get("/stats/locations?limit=8");
-  const sizes = await get("/stats/sizes?limit=6");
+  const refs = await getRange("/stats/toprefs?limit=8", q, { required: false });
+  const locations = await getRange("/stats/locations?limit=8", q, { required: false });
+  const sizes = await getRange("/stats/sizes?limit=6", q, { required: false });
 
   const list = hits.hits || [];
   const pages = list.filter((h) => !h.event);
