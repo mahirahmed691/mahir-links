@@ -66,6 +66,7 @@ if (adminFn) {
   mkdirSync(join(root, "api"), { recursive: true });
   writeFileSync(join(root, "api", "admin.mjs"), adminFn);
   cpSync(join(root, "functions", "admin.css"), join(out, "admin.css"));
+  cpSync(join(root, "functions", "admin.js"), join(out, "admin.js"));
 }
 writeFileSync(
   join(out, "version.json"),
