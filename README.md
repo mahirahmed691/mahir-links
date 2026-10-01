@@ -110,7 +110,7 @@ No cookies and no personal data, so no consent banner is needed.
 
 ## Private admin page (/admin)
 
-`https://<site>/admin` is a private report: a short summary, this period against the previous one, visitors by day with the last period behind them, and a business ranking you can sort or trim to the active ones. It also shows share platforms, referrers, countries and screen sizes for today, 7 days or 30 days. It's rendered on the server by `functions/admin.mjs` (a Vercel function), so your GoatCounter key never reaches the browser.
+`https://<site>/admin` is a private report: a short summary, this period against the previous one, visitors by day with the last period behind them, which weekday or time of day is busiest, and a business ranking that shows who gained or lost clicks. You can sort it, filter it, or trim it to the active ones. It also shows share platforms, referrers, countries and screen sizes for today, 7 days or 30 days. It's rendered on the server by `functions/admin.mjs` (a Vercel function), so your GoatCounter key never reaches the browser.
 
 Setup, once, in Vercel → Project → Settings → Environment Variables (Production):
 
