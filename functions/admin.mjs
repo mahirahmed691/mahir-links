@@ -56,7 +56,8 @@ export default async function handler(req, res) {
     console.error("admin: GoatCounter request failed", err);
     res.statusCode = 502;
     const note = `<p class="note">Couldn't reach GoatCounter: ${esc(err.message)}. Try again in a minute.</p>`;
-    send(res, page("Stats unavailable", owner ? note + accessNote(access) : note));
+    const extra = owner ? (access.share?.url ? linkCallout(access.share) : "") + accessNote(access, rangeKey) : "";
+    send(res, page("Stats unavailable", note + extra));
   }
 }
 
@@ -115,7 +116,7 @@ function shareLink(req, password) {
   if (!SHARE_DAYS.includes(days)) return { error: "Choose 1, 7, or 30 days." };
   const exp = Date.now() + days * 864e5;
   const guest = signGuest(label, exp, password);
-  return { url: `${requestOrigin(req)}/admin?guest=${guest}`, label, exp };
+  return { url: `${requestOrigin(req)}/admin?guest=${guest}`, label, exp, days };
 }
 
 function requestOrigin(req) {
@@ -173,16 +174,16 @@ async function load(fetchImpl, token, rangeKey) {
           wait = Math.min(wait * 2, 2000);
           continue;
         }
-        if (!required) return { stats: [], hits: [] };
+        if (!required) return { stats: [], hits: [], missing: true };
         throw new Error(`${label} returned 429`);
       }
       if (!r.ok) {
-        if (!required) return { stats: [], hits: [] };
+        if (!required) return { stats: [], hits: [], missing: true };
         throw new Error(`${label} returned ${r.status}`);
       }
       return r.json();
     }
-    if (!required) return { stats: [], hits: [] };
+    if (!required) return { stats: [], hits: [], missing: true };
     throw new Error(`${label} returned 429`);
   };
   const hits = await getRange("/stats/hits?limit=100", q);
@@ -243,6 +244,7 @@ async function load(fetchImpl, token, rangeKey) {
     referrers: byCount((refs.stats || []).map((r) => ({ name: r.name || "Direct or unknown", count: r.count }))),
     locations: byCount((locations.stats || []).map((r) => ({ name: r.name || "Unknown", count: r.count }))),
     devices: byCount((sizes.stats || []).map((r) => ({ name: r.name || "Unknown", count: r.count }))),
+    missing: { referrers: !!refs.missing, locations: !!locations.missing, devices: !!sizes.missing },
   };
 }
 
@@ -271,7 +273,8 @@ function page(title, body) {
 </head><body><main class="admin">${body}</main></body></html>`;
 }
 
-function bars(rows) {
+function bars(rows, missing) {
+  if (missing) return `<p class="empty">Not loaded this time. Refresh in a minute.</p>`;
   if (!rows.length) return `<p class="empty">Nothing yet.</p>`;
   const max = Math.max(...rows.map((r) => r.count), 1);
   return `<ul class="bars">${rows.map((r) => `<li><span class="bar-label">${esc(r.name)}</span><span class="bar-track"><span class="bar-fill w${Math.max(2, Math.round((r.count / max) * 50) * 2)}"></span></span><span class="bar-num">${n(r.count)}</span></li>`).join("")}</ul>`;
@@ -303,26 +306,65 @@ function trend(now, before, rangeKey) {
   return `<span class="trend ${pct > 0 ? "up" : "down"}">${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs ${period}</span>`;
 }
 
-function accessNote(access) {
-  if (!access.owner) return `<p class="note">Viewing as ${esc(access.guest.label)} until ${esc(when(access.guest.exp))}.</p>`;
-  const made = access.share?.url
-    ? `<p class="linkbox"><a href="${esc(access.share.url)}">${esc(access.share.url)}</a></p><p class="note">For ${esc(access.share.label)} until ${esc(when(access.share.exp))}. Anyone with this link can view stats until then.</p>`
-    : access.share?.error ? `<p class="note">${esc(access.share.error)}</p>` : "";
-  const days = SHARE_DAYS.map((d) => `<option value="${d}"${d === 7 ? " selected" : ""}>${d === 1 ? "1 day" : d + " days"}</option>`).join("");
+function sendActions(share) {
+  const text = `Stats for ${share.label} until ${when(share.exp)}: ${share.url}`;
+  const wa = `https://wa.me/?text=${encodeURIComponent(text)}`;
+  const mail = `mailto:?subject=${encodeURIComponent("Stats link for " + share.label)}&body=${encodeURIComponent(text)}`;
+  return `<p class="actions"><a href="${esc(wa)}">Send on WhatsApp</a><a href="${esc(mail)}">Email the link</a></p>`;
+}
+
+function linkCallout(share) {
+  return `<section class="panel callout"><h2>Link for ${esc(share.label)}</h2>
+<p class="linkbox">${esc(share.url)}</p>
+${sendActions(share)}
+<p class="note">Works until ${esc(when(share.exp))}. Anyone with this link can view stats. Select the link to copy it.</p></section>`;
+}
+
+function brief(d, rangeKey) {
+  const bits = [];
+  const peak = d.points.reduce((best, point) => point[1] > best[1] ? point : best, ["", 0]);
+  if (peak[1]) {
+    const whenLabel = rangeKey === "today"
+      ? `${peak[0].split(" ")[1]}:00`
+      : new Date(peak[0] + "T00:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+    bits.push(`Busiest ${rangeKey === "today" ? "hour" : "day"} was ${whenLabel} (${n(peak[1])} visitors).`);
+  }
+  const top = [...d.businesses].sort((a, b) => b.clicks - a.clicks)[0];
+  if (top?.clicks) bits.push(`${top.name} got the most clicks (${n(top.clicks)}).`);
+  if (d.referrers[0]?.count) bits.push(`Most visits came from ${d.referrers[0].name}.`);
+  return bits.length ? `<p class="brief">${bits.map(esc).join(" ")}</p>` : "";
+}
+
+function accessNote(access, rangeKey) {
+  if (!access.owner) return "";
+  const chosen = access.share?.days || 7;
+  const days = SHARE_DAYS.map((d) => `<option value="${d}"${d === chosen ? " selected" : ""}>${d === 1 ? "1 day" : d + " days"}</option>`).join("");
+  const name = access.share?.label ? ` value="${esc(access.share.label)}"` : "";
+  const error = access.share?.error ? `<p class="note">${esc(access.share.error)}</p>` : "";
   return `<section class="panel wide"><h2>Temporary access</h2>
 <p class="note">Create a link for someone. They can view these stats until it expires. They do not get your password, and they cannot create links. Changing your admin password ends every link.</p>
 <form class="share" action="/admin" method="get">
-<label>Name <input name="for" maxlength="40" required placeholder="Ada" autocomplete="off"></label>
+<input type="hidden" name="range" value="${esc(rangeKey)}">
+<label>Name <input name="for" maxlength="40" required placeholder="Ada" autocomplete="off"${name}></label>
 <label>For <select name="days">${days}</select></label>
 <button type="submit">Create link</button>
-</form>${made}</section>`;
+</form>${error}</section>`;
 }
 
 function render(d, rangeKey, access) {
   const ctr = d.visitors ? Math.round((d.clicks / d.visitors) * 100) : 0;
   const tabs = Object.entries(RANGES).map(([k, r]) => `<a href="/admin?range=${k}"${k === rangeKey ? ' aria-current="page"' : ""}>${esc(r.label)}</a>`).join("");
   const updated = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
+  const banner = !access.owner
+    ? `<p class="banner">Viewing as ${esc(access.guest.label)} until ${esc(when(access.guest.exp))}.</p>`
+    : access.share?.url ? linkCallout(access.share) : "";
+  const rows = d.businesses.map((b) => {
+    const pct = d.clicks ? Math.round((b.clicks / d.clicks) * 100) : 0;
+    const quiet = !b.clicks && !b.shares ? ` class="quiet"` : "";
+    return `<tr${quiet}><td>${esc(b.name)}</td><td>${n(b.clicks)}</td><td>${b.clicks ? pct + "%" : "—"}</td><td>${n(b.shares)}</td></tr>`;
+  }).join("");
   return `
+${banner}
 <header class="admin-head">
   <div><h1>Stats</h1><p class="sub">${esc(site.name)} · <a href="/">View site</a></p></div>
   <nav class="tabs" aria-label="Date range">${tabs}</nav>
@@ -333,20 +375,21 @@ function render(d, rangeKey, access) {
   <div class="kpi"><span class="kpi-num">${n(d.shares)}</span><span class="kpi-label">Shares</span>${trend(d.shares, d.prev.shares, rangeKey)}</div>
   <div class="kpi"><span class="kpi-num">${ctr}%</span><span class="kpi-label">Clicks per visitor</span></div>
 </section>
+${brief(d, rangeKey)}
 <section class="panel wide"><h2>Visitors ${rangeKey === "today" ? "by hour" : "by day"}</h2>${chart(d.points, rangeKey === "today")}</section>
 <section class="panel wide">
   <h2>Businesses</h2>
-  <table><thead><tr><th>Business</th><th>Clicks</th><th>Shares</th></tr></thead><tbody>
-  ${d.businesses.map((b) => `<tr><td>${esc(b.name)}</td><td>${n(b.clicks)}</td><td>${n(b.shares)}</td></tr>`).join("")}
+  <table><thead><tr><th>Business</th><th>Clicks</th><th>Of clicks</th><th>Shares</th></tr></thead><tbody>
+  ${rows}
   </tbody></table>
 </section>
 <div class="grid">
   <section class="panel"><h2>Other links</h2>${bars(d.links)}</section>
   <section class="panel"><h2>Shared via</h2>${bars(d.methods)}</section>
-  <section class="panel"><h2>Where visitors came from</h2>${bars(d.referrers)}</section>
-  <section class="panel"><h2>Countries</h2>${bars(d.locations)}</section>
-  <section class="panel"><h2>Screen sizes</h2>${bars(d.devices)}</section>
+  <section class="panel"><h2>Where visitors came from</h2>${bars(d.referrers, d.missing.referrers)}</section>
+  <section class="panel"><h2>Countries</h2>${bars(d.locations, d.missing.locations)}</section>
+  <section class="panel"><h2>Screen sizes</h2>${bars(d.devices, d.missing.devices)}</section>
 </div>
 <p class="note">Updated ${esc(updated)} UK time. GoatCounter's figures can lag live traffic by up to two hours. <a href="https://${esc(site.goatcounter)}.goatcounter.com">Full GoatCounter dashboard</a></p>
-${accessNote(access)}`;
+${accessNote(access, rangeKey)}`;
 }
