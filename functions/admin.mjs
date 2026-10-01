@@ -65,7 +65,7 @@ function viewOf(req) {
   const sortParam = queryValue(req, "sort");
   return {
     rangeKey: RANGES[rangeParam] ? rangeParam : "7d",
-    sort: ["clicks", "shares", "name"].includes(sortParam) ? sortParam : "clicks",
+    sort: ["clicks", "shares", "name", "change"].includes(sortParam) ? sortParam : "clicks",
     quiet: queryValue(req, "quiet") === "show" ? "show" : "hide",
   };
 }
@@ -221,7 +221,7 @@ async function load(fetchImpl, token, rangeKey) {
   const nameOf = (slug) => site.names[slug] || slug;
 
   // Per-business leaderboard: clicks and shares.
-  const board = new Map(site.businesses.map((slug) => [slug, { name: nameOf(slug), clicks: 0, shares: 0 }]));
+  const board = new Map(site.businesses.map((slug) => [slug, { name: nameOf(slug), clicks: 0, shares: 0, prevClicks: 0, prevShares: 0 }]));
   for (const c of clicks) { const slug = c.path.slice(6); if (board.has(slug)) board.get(slug).clicks += c.count; }
   const byMethod = new Map();
   for (const s of shares) {
@@ -234,6 +234,14 @@ async function load(fetchImpl, token, rangeKey) {
     .map((c) => ({ name: c.title || nameOf(c.path.slice(6)), count: c.count }));
 
   const prevList = prevHits.hits || [];
+  for (const hit of prevList.filter((h) => h.event && h.path.startsWith("click/"))) {
+    const slug = hit.path.slice(6);
+    if (board.has(slug)) board.get(slug).prevClicks += hit.count || 0;
+  }
+  for (const hit of prevList.filter((h) => h.event && h.path.startsWith("share/"))) {
+    const from = hit.path.split("/")[1];
+    if (board.has(from)) board.get(from).prevShares += hit.count || 0;
+  }
   const points = alignSeries(list, rangeKey, start, end);
   const prevPoints = alignSeries(prevList, rangeKey, prevStart, start);
   const prev = {
@@ -250,6 +258,8 @@ async function load(fetchImpl, token, rangeKey) {
     shares: sum(shares),
     points,
     prevPoints,
+    rhythm: rhythmOf(points, rangeKey),
+    pages: mergeCounts(pages.map((h) => ({ name: h.path === "/" ? "Home" : (h.title || h.path || "Page"), count: h.count || 0 }))).slice(0, 6),
     businesses: [...board.values()],
     links: otherLinks.sort((a, b) => b.count - a.count),
     methods: [...byMethod.entries()].map(([name, count]) => ({ name: METHOD_NAMES[name] || name, count })).sort((a, b) => b.count - a.count),
@@ -286,6 +296,44 @@ function alignSeries(list, rangeKey, start, end) {
 }
 
 const byCount = (rows) => rows.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+function mergeCounts(rows) {
+  const map = new Map();
+  for (const row of rows) if (row.count) map.set(row.name, (map.get(row.name) || 0) + row.count);
+  return byCount([...map.entries()].map(([name, count]) => ({ name, count })));
+}
+
+function londonHour(date) {
+  const part = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "numeric", hourCycle: "h23" }).formatToParts(date).find((p) => p.type === "hour");
+  return Number(part?.value || 0);
+}
+
+function rhythmOf(points, rangeKey) {
+  if (rangeKey === "today") {
+    const bands = [
+      { name: "Night", count: 0, test: (h) => h < 6 },
+      { name: "Morning", count: 0, test: (h) => h >= 6 && h < 12 },
+      { name: "Afternoon", count: 0, test: (h) => h >= 12 && h < 18 },
+      { name: "Evening", count: 0, test: (h) => h >= 18 },
+    ];
+    for (const [key, value] of points) {
+      const [day, hour] = String(key).split(" ");
+      if (!day || hour == null || hour === "") continue;
+      const when = new Date(`${day}T${String(hour).padStart(2, "0")}:00:00Z`);
+      const band = bands.find((item) => item.test(londonHour(when)));
+      if (band) band.count += value;
+    }
+    return { title: "Time of day", hint: "UK time", rows: bands.map(({ name, count }) => ({ name, count })) };
+  }
+  const names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const rows = names.map((name) => ({ name, count: 0 }));
+  for (const [key, value] of points) {
+    if (!key || String(key).includes(" ")) continue;
+    const index = (new Date(key + "T00:00:00Z").getUTCDay() + 6) % 7;
+    rows[index].count += value;
+  }
+  return { title: "By weekday", hint: "", rows };
+}
 
 const METHOD_NAMES = { native: "Phone share sheet", whatsapp: "WhatsApp", x: "X", linkedin: "LinkedIn", facebook: "Facebook", email: "Email", copy: "Copy link" };
 
@@ -412,6 +460,10 @@ function briefing(d, rangeKey) {
   if (move) sentences.push(move);
   const top = [...d.businesses].sort((a, b) => b.clicks - a.clicks || a.name.localeCompare(b.name))[0];
   if (top?.clicks && d.clicks) sentences.push(`${top.name} took ${rate(top.clicks, d.clicks)}% of clicks.`);
+  const moved = biggestMove(d.businesses);
+  if (moved) sentences.push(moved);
+  const rhythmLine = rhythmSentence(d.rhythm);
+  if (rhythmLine) sentences.push(rhythmLine);
   const peak = d.points.reduce((best, point) => point[1] > best[1] ? point : best, ["", 0]);
   if (peak[1]) {
     const avg = d.points.reduce((sum, [, value]) => sum + value, 0) / d.points.length;
@@ -445,10 +497,39 @@ ${rows.map(([label, now, then, change]) => `<tr><th scope="row">${label}</th><td
 </tbody></table>`;
 }
 
+function biggestMove(businesses) {
+  const moves = businesses.map((b) => ({ name: b.name, delta: b.clicks - (b.prevClicks || 0) }));
+  moves.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || b.delta - a.delta || a.name.localeCompare(b.name));
+  const top = moves.find((m) => m.delta !== 0);
+  if (!top) return null;
+  if (top.delta > 0) return `${top.name} gained ${n(top.delta)} ${plural(top.delta, "click", "clicks")} on the previous period.`;
+  return `${top.name} lost ${n(Math.abs(top.delta))} ${plural(Math.abs(top.delta), "click", "clicks")} on the previous period.`;
+}
+
+function rhythmSentence(rhythm) {
+  if (!rhythm?.rows?.some((row) => row.count)) return null;
+  const max = Math.max(...rhythm.rows.map((row) => row.count));
+  const leaders = rhythm.rows.filter((row) => row.count === max);
+  if (leaders.length === rhythm.rows.length) return null;
+  const label = (rhythm.title === "Time of day" ? leaders.map((row) => row.name) : leaders.map((row) => row.name + "s")).join(" and ");
+  const each = leaders.length > 1 ? " each" : "";
+  return `${label} had the most visits (${n(max)}${each}).`;
+}
+
+function deltaMark(now, before) {
+  const delta = now - (before || 0);
+  if (!now && !before) return `<span class="flat">0</span>`;
+  if (!before && now) return `<span class="up">New</span>`;
+  if (delta === 0) return `<span class="flat">Same</span>`;
+  return `<span class="${delta > 0 ? "up" : "down"}">${delta > 0 ? "▲" : "▼"} ${n(Math.abs(delta))}</span>`;
+}
+
 function orderBusinesses(list, sort) {
   const rows = [...list];
+  const change = (b) => b.clicks - (b.prevClicks || 0);
   if (sort === "name") rows.sort((a, b) => a.name.localeCompare(b.name));
   else if (sort === "shares") rows.sort((a, b) => b.shares - a.shares || b.clicks - a.clicks || a.name.localeCompare(b.name));
+  else if (sort === "change") rows.sort((a, b) => Math.abs(change(b)) - Math.abs(change(a)) || change(b) - change(a) || a.name.localeCompare(b.name));
   else rows.sort((a, b) => b.clicks - a.clicks || b.shares - a.shares || a.name.localeCompare(b.name));
   return rows;
 }
@@ -457,7 +538,7 @@ function ranking(d, view) {
   const quietCount = d.businesses.filter((b) => !b.clicks && !b.shares).length;
   const visible = orderBusinesses(d.businesses, view.sort).filter((b) => view.quiet === "show" || b.clicks || b.shares);
   const maxClicks = Math.max(...d.businesses.map((b) => b.clicks), 0);
-  const sorts = [["clicks", "Clicks"], ["shares", "Shares"], ["name", "Name"]];
+  const sorts = [["clicks", "Clicks"], ["shares", "Shares"], ["change", "Change"], ["name", "Name"]];
   const sortNav = sorts.map(([key, label]) => `<a href="${esc(href(view, { sort: key }))}"${view.sort === key ? ' aria-current="page"' : ""}>${label}</a>`).join("");
   const quietLink = quietCount
     ? `<a class="textlink" href="${esc(href(view, { quiet: view.quiet === "hide" ? "show" : "hide" }))}">${view.quiet === "hide" ? `Show ${quietCount} quiet` : `Hide ${quietCount} quiet`}</a>`
@@ -466,13 +547,26 @@ function ranking(d, view) {
     ? `<ol class="rank">${visible.map((b, i) => {
       const pct = d.clicks ? rate(b.clicks, d.clicks) : 0;
       const quiet = !b.clicks && !b.shares ? ` class="quiet"` : "";
-      return `<li${quiet}><span class="rank-i">${i + 1}</span><span class="rank-name">${esc(b.name)}</span><span class="bar-track" aria-hidden="true"><span class="bar-fill ${widthClass(b.clicks, maxClicks)}"></span></span><span class="rank-stat"><b>${n(b.clicks)}</b> clicks</span><span class="rank-stat">${pct}%</span><span class="rank-stat"><b>${n(b.shares)}</b> shares</span></li>`;
+      return `<li${quiet}><span class="rank-i">${i + 1}</span><span class="rank-name">${esc(b.name)}</span><span class="bar-track" aria-hidden="true"><span class="bar-fill ${widthClass(b.clicks, maxClicks)}"></span></span><span class="rank-stat"><b>${n(b.clicks)}</b> clicks</span><span class="rank-stat">${pct}%</span><span class="rank-stat"><b>${n(b.shares)}</b> shares</span><span class="rank-stat delta">${deltaMark(b.clicks, b.prevClicks)}</span></li>`;
     }).join("")}</ol>`
     : `<p class="empty">${view.quiet === "hide" ? "Every business was quiet in this period." : "No businesses yet."}</p>`;
   const note = quietCount && view.quiet === "show" ? `<p class="note tight">${quietCount} of ${d.businesses.length} had no clicks or shares.</p>` : "";
   return `<section class="block">
-<header class="block-head"><div><h2>Businesses</h2>${note}</div><div class="tools"><nav class="tabs" aria-label="Sort businesses">${sortNav}</nav>${quietLink}</div></header>
-${rows}</section>`;
+<header class="block-head"><div><h2>Businesses</h2>${note}</div><div class="tools"><label class="filter">Filter <input type="search" data-filter="businesses" placeholder="Name" autocomplete="off"></label><nav class="tabs" aria-label="Sort businesses">${sortNav}</nav>${quietLink}</div></header>
+${rows}
+<p class="empty" data-filter-empty hidden>No business matches that name.</p></section>`;
+}
+
+function rhythmBlock(rhythm) {
+  if (!rhythm?.rows?.some((row) => row.count)) return "";
+  const max = Math.max(...rhythm.rows.map((row) => row.count), 1);
+  const short = { Monday: "Mon", Tuesday: "Tue", Wednesday: "Wed", Thursday: "Thu", Friday: "Fri", Saturday: "Sat", Sunday: "Sun" };
+  const items = rhythm.rows.map((row) => {
+    const peak = row.count === max ? ` class="peak"` : "";
+    return `<li${peak}><span>${esc(short[row.name] || row.name)}</span><b>${n(row.count)}</b><span class="bar-track" aria-hidden="true"><span class="bar-fill ${widthClass(row.count, max)}"></span></span></li>`;
+  }).join("");
+  const hint = rhythm.hint ? `<p class="note tight">${esc(rhythm.hint)}</p>` : "";
+  return `<section class="block"><header class="block-head"><div><h2>${esc(rhythm.title)}</h2>${hint}</div></header><ol class="week">${items}</ol></section>`;
 }
 
 function sendActions(share) {
@@ -515,12 +609,14 @@ function render(d, view, access) {
   const { rangeKey } = view;
   const hourly = rangeKey === "today";
   const sentences = briefing(d, rangeKey);
-  const tabs = Object.entries(RANGES).map(([k, r]) => `<a href="${esc(href(view, { rangeKey: k }))}"${k === rangeKey ? ' aria-current="page"' : ""}>${esc(r.label)}</a>`).join("");
+  const keys = { today: "T", "7d": "7", "30d": "3" };
+  const tabs = Object.entries(RANGES).map(([k, r]) => `<a href="${esc(href(view, { rangeKey: k }))}"${k === rangeKey ? ' aria-current="page"' : ""} title="${esc(r.label)}, press ${keys[k]}">${esc(r.label)}</a>`).join("");
   const updated = new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
   const banner = !access.owner
     ? `<p class="banner">Viewing as ${esc(access.guest.label)} until ${esc(when(access.guest.exp))}.</p>`
     : access.share?.url ? linkCallout(access.share) : "";
   const sections = [
+    ["Pages opened", bars(d.pages), d.pages.length],
     ["Other links", bars(d.links), d.links.length],
     ["Shared via", bars(d.methods), d.methods.length],
     ["Where visitors came from", bars(d.referrers, d.missing.referrers), true],
@@ -548,6 +644,7 @@ ${banner}
   <header class="block-head"><h2>Visitors ${hourly ? "by hour" : "by day"}</h2></header>
   ${chart(d.points, d.prevPoints || [], hourly)}
 </section>
+${rhythmBlock(d.rhythm)}
 ${ranking(d, view)}
 <div class="sources">${sections.filter(([, , show]) => show).map(([title, body]) => `<section class="block"><h2>${title}</h2>${body}</section>`).join("")}</div>
 <p class="note">Updated ${esc(updated)} UK time. GoatCounter can lag live traffic by up to two hours. <a href="https://${esc(site.goatcounter)}.goatcounter.com">Full GoatCounter dashboard</a></p>
