@@ -225,6 +225,21 @@
         "badge": "New",
         "image": "assets/rapider.webp",
         "badgeUntil": "2026-10-25"
+      },
+      {
+        "name": "D Apartment Sylhet",
+        "description": "Newly built flats to let on Tamabil Highway, Sylhet. Rent is agreed after a viewing.",
+        "url": "https://www.dapartmentsylhet.com",
+        "status": "Live",
+        "kind": "Commission",
+        "stack": [
+          "Next.js",
+          "Vercel"
+        ],
+        "icon": "🏠",
+        "badge": "New",
+        "image": "https://www.dapartmentsylhet.com/images/kitchen-drawers.png",
+        "badgeUntil": "2026-11-09"
       }
     ]
   },
