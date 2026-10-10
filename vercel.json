@@ -9,7 +9,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' https://gc.zgo.at; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://avatars.githubusercontent.com https://www.prolificdigitaltech.co.uk https://www.mysakinah.app https://mysakinah.app https://www.motivcarhire.com https://motivcarhire.co.uk https://www.motivcarhire.co.uk https://*.goatcounter.com; connect-src 'self' https://*.goatcounter.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests"
+          "value": "default-src 'self'; script-src 'self' https://gc.zgo.at; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://avatars.githubusercontent.com https://www.prolificdigitaltech.co.uk https://www.mysakinah.app https://mysakinah.app https://www.motivcarhire.com https://motivcarhire.co.uk https://www.motivcarhire.co.uk https://dapartmentsylhet.com https://www.dapartmentsylhet.com https://*.goatcounter.com; connect-src 'self' https://*.goatcounter.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests"
         },
         {
           "key": "X-Content-Type-Options",
