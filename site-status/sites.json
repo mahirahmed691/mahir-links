@@ -1,0 +1,44 @@
+{
+  "sites": [
+    {
+      "name": "Mahir Ahmed",
+      "url": "https://www.mahirahmed.link"
+    },
+    {
+      "name": "FlickFinder",
+      "url": "https://flickfinder-nu.vercel.app"
+    },
+    {
+      "name": "Sakinah",
+      "url": "https://www.mysakinah.app"
+    },
+    {
+      "name": "Motiv",
+      "url": "https://www.motivcarhire.com"
+    },
+    {
+      "name": "KARV'D",
+      "url": "https://www.karvd.uk"
+    },
+    {
+      "name": "Kiano London",
+      "url": "https://kiano.london"
+    },
+    {
+      "name": "Sweet Dezire",
+      "url": "https://sweetdezire.co.uk"
+    },
+    {
+      "name": "Blanco Coffee House",
+      "url": "https://blancocoffeehouse.com"
+    },
+    {
+      "name": "RAPIDER",
+      "url": "https://rapider.co.uk"
+    },
+    {
+      "name": "D Apartment Sylhet",
+      "url": "https://www.dapartmentsylhet.com"
+    }
+  ]
+}
