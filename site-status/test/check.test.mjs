@@ -116,6 +116,8 @@ test("mainText names down sites and stays clear when everything is up", () => {
   assert.match(flicker.mainText, /FlickFinder is down/);
   assert.match(flicker.mainText, /status 500/);
   assert.match(flicker.mainText, /millisecond/);
+  assert.match(flicker.mainText, /Fix: Check the host logs/);
+  assert.match(down[0].mainText, /The fix for FlickFinder: Check the host logs/);
   assert.match(down.map((item) => item.mainText).join(" "), /One is up, status 200/);
 
   const up = buildAlexa(
@@ -126,6 +128,7 @@ test("mainText names down sites and stays clear when everything is up", () => {
   assert.match(up[0].mainText, /1 millisecond/);
   assert.match(up[0].mainText, /UK time/);
   assert.equal(up[0].mainText.includes("down"), false);
+  assert.equal(up[0].mainText.includes("Fix:"), false);
 
   const speeds = buildAlexa(
     buildStatus(
@@ -183,4 +186,18 @@ test("mainText names down sites and stays clear when everything is up", () => {
     },
   );
   assert.match(slower[0].mainText, /Two is 1.4 seconds slower than last time/);
+
+  const heavy = buildAlexa(
+    buildStatus(
+      [
+        { name: "One", url: "https://one.example", up: true, status: 200, ttfb: 100, ms: 150, bytes: 2048, contentType: "text/html", error: null },
+        { name: "Abayas Boutique", url: "https://abayasboutique.com", up: true, status: 200, ttfb: 3600, ms: 3800, bytes: 1468006, contentType: "text/html", error: null },
+      ],
+      updated,
+    ),
+    { id: "status-fix" },
+  );
+  const fixText = heavy.map((item) => item.mainText).join(" ");
+  assert.match(fixText, /The fix for Abayas Boutique: Cache the homepage, and cut the page down from 1\.4 megabytes/);
+  assert.equal(fixText.includes("The fix for One"), false);
 });

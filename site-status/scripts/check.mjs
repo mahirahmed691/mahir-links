@@ -211,8 +211,46 @@ export function compareSites(current, previous) {
   return notes;
 }
 
+const HEAVY_BYTES = 500 * 1024;
+const SLOW_START_MS = 1500;
+const SLOW_MS = 2500;
+
+function siteFix(site) {
+  if (!site.up) {
+    if (site.error === "timeout") return "Check that the host is still running. The check gave up waiting.";
+    if (site.error === "network") return "Check the domain. The site could not be reached.";
+    if (site.status === 404) return "Check the address. The page was not found.";
+    if (typeof site.status === "number" && site.status >= 500) return "Check the host logs. The server returned an error.";
+    return "Check the host.";
+  }
+  if (typeof site.certDays === "number" && site.certDays < 0) return "Renew the certificate. It has expired.";
+  if (typeof site.certDays === "number" && site.certDays <= 30) return "Renew the certificate before it expires.";
+  const heavy = typeof site.bytes === "number" && site.bytes >= HEAVY_BYTES;
+  const slowStart = typeof site.ttfb === "number" && site.ttfb >= SLOW_START_MS;
+  const slow = typeof site.ms === "number" && site.ms >= SLOW_MS;
+  if (slowStart && heavy) return `Cache the homepage, and cut the page down from ${spokenSize(site.bytes)}.`;
+  if (slowStart) return "Cache the homepage. The server was slow to send the first byte.";
+  if (heavy) return `Shrink the homepage. It is ${spokenSize(site.bytes)}.`;
+  if (slow) return "Cache the homepage. The response was slow.";
+  return "";
+}
+
+function mainFix(sites) {
+  const down = sites.find((site) => !site.up);
+  if (down) return `The fix for ${down.name}: ${siteFix(down)}`;
+  const certificate = sites.find((site) => typeof site.certDays === "number" && site.certDays <= 30);
+  if (certificate) return `The fix for ${certificate.name}: ${siteFix(certificate)}`;
+  const slowest = sites
+    .filter((site) => siteFix(site))
+    .sort((left, right) => (right.ms || 0) - (left.ms || 0))[0];
+  return slowest ? `The fix for ${slowest.name}: ${siteFix(slowest)}` : "";
+}
+
 function siteReport(site) {
-  if (!site.up) return `${site.name} is down. It ${downReason(site)}.`;
+  if (!site.up) {
+    const fix = siteFix(site);
+    return `${site.name} is down. It ${downReason(site)}.${fix ? ` Fix: ${fix}` : ""}`;
+  }
   const parts = [`${site.name} is up`, `status ${site.status}`];
   if (typeof site.ttfb === "number" && site.ms - site.ttfb > 50) {
     parts.push(`first byte in ${spokenDuration(site.ttfb)}`, `finished in ${spokenDuration(site.ms)}`);
@@ -231,6 +269,8 @@ function siteReport(site) {
   if (site.title && site.title.toLowerCase() !== site.name.toLowerCase()) sentence += ` The page title is ${site.title}.`;
   if (typeof site.certDays === "number" && site.certDays < 0) sentence += " Its certificate has expired.";
   else if (typeof site.certDays === "number" && site.certDays <= 30) sentence += ` Its certificate expires in ${site.certDays} day${site.certDays === 1 ? "" : "s"}.`;
+  const fix = siteFix(site);
+  if (fix) sentence += ` Fix: ${fix}`;
   return sentence;
 }
 
@@ -258,6 +298,10 @@ export function buildAlexa(status, { id = randomUUID(), redirect = REDIRECT_URL,
   if (previous?.sites) {
     const since = previous.updated ? `since ${spokenClock(new Date(previous.updated))}` : "since the last check";
     summary += changes.length ? ` ${changes.join(" ")}` : ` Nothing notable has changed ${since}.`;
+  }
+  if (status.sites.length > 1) {
+    const fix = mainFix(status.sites);
+    if (fix) summary += ` ${fix}`;
   }
 
   const items = [item(id, "Site status", summary)];
