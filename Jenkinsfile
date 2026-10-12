@@ -12,20 +12,7 @@ pipeline {
   parameters {
     choice(
       name: 'SHOP',
-      choices: [
-        'Mahir Ahmed',
-        'FlickFinder',
-        'Sakinah',
-        'Motiv',
-        "KARV'D",
-        'Kiano London',
-        'Sweet Dezire',
-        'Blanco Coffee House',
-        'RAPIDER',
-        'D Apartment Sylhet',
-        'Abayas Boutique',
-        "Tara's Bakes",
-      ].join('\n'),
+      choices: "Mahir Ahmed\nFlickFinder\nSakinah\nMotiv\nKARV'D\nKiano London\nSweet Dezire\nBlanco Coffee House\nRAPIDER\nD Apartment Sylhet\nAbayas Boutique\nTara's Bakes",
       description: 'Shop to check. The address comes from the site list.'
     )
   }
@@ -38,11 +25,7 @@ pipeline {
           if (!shop) {
             error 'Pick a shop from the list, then run the job again.'
           }
-          def url = shopUrl(readFile('site-status/sites.json'), shop)
-          if (!url) {
-            error "No address is listed for ${shop}."
-          }
-          writeFile file: 'site-status/pitch-request.json', text: groovy.json.JsonOutput.toJson([name: shop, url: url])
+          writeFile file: 'site-status/pitch-request.json', text: groovy.json.JsonOutput.toJson([name: shop])
         }
         dir('site-status') {
           sh 'node --version'
@@ -60,10 +43,4 @@ pipeline {
       sh 'rm -f site-status/pitch-request.json site-status/pitch.txt'
     }
   }
-}
-
-@NonCPS
-String shopUrl(String raw, String shop) {
-  def parsed = new groovy.json.JsonSlurperClassic().parseText(raw)
-  return parsed.sites.find { it.name == shop }?.url
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { linkedinNote, pitchSite, publicHttpsUrl } from "../scripts/pitch.mjs";
+import { linkedinNote, pitchSite, publicHttpsUrl, urlForShop } from "../scripts/pitch.mjs";
 
 const now = () => new Date("2026-10-12T21:28:00.000Z");
 
@@ -53,6 +53,12 @@ test("the note uses the spoken check", () => {
   });
   assert.match(note, /^I checked tsbakes\.co\.uk\./);
   assert.match(note, /Tara's Bakes is up/);
+});
+
+test("a shop name finds its address in the site list", () => {
+  const sites = { sites: [{ name: "Tara's Bakes", url: "https://www.tsbakes.co.uk" }] };
+  assert.equal(urlForShop(sites, "Tara's Bakes"), "https://www.tsbakes.co.uk");
+  assert.throws(() => urlForShop(sites, "Missing Shop"), /No address is listed/);
 });
 
 test("private and non-https addresses are refused", () => {
