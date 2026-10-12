@@ -1,5 +1,5 @@
-# Hourly uptime probes. A down site is written into the feed; it does not fail the job.
-# This private repo cannot enable GitHub Pages, so the feed is kept as an Actions artifact.
+# Hourly uptime probes. Publishes site-status/public to GitHub Pages.
+# A down site is written into the feed; it does not fail the job.
 # Job names and the concurrency group are distinct from CI, Deploy, and Monitor.
 name: Site status
 
@@ -46,10 +46,23 @@ jobs:
         working-directory: site-status
         run: npm run check
 
-      - name: Upload feed
+      - name: Upload GitHub Pages artifact
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-pages-artifact@v5
         with:
-          name: site-status-feed
           path: site-status/public
-          retention-days: 7
+
+  publish:
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
