@@ -21,12 +21,24 @@ export async function probeSite(site, { fetchImpl = fetch, timeoutMs = 15000 } =
       signal: AbortSignal.timeout(timeoutMs),
       headers: { "user-agent": "mahirahmed-site-status" },
     });
+    const ttfb = Date.now() - started;
+    let bytes = null;
+    try {
+      if (typeof response.arrayBuffer === "function") bytes = (await response.arrayBuffer()).byteLength;
+    } catch {
+      bytes = null;
+    }
     return {
       name: site.name,
       url: site.url,
+      finalUrl: response.url || site.url,
+      redirected: Boolean(response.redirected),
       up: response.status >= 200 && response.status < 400,
       status: response.status,
+      ttfb,
       ms: Date.now() - started,
+      bytes,
+      contentType: response.headers?.get?.("content-type") ?? null,
       error: null,
     };
   } catch (error) {
@@ -53,12 +65,13 @@ export function buildStatus(results, updated) {
 function spokenClock(date) {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/London",
+    weekday: "long",
     hour: "numeric",
     minute: "2-digit",
     hourCycle: "h12",
   }).formatToParts(date);
   const value = (type) => parts.find((part) => part.type === type)?.value ?? "";
-  return `${value("hour")}:${value("minute")} ${value("dayPeriod").toUpperCase()} UK time`;
+  return `${value("weekday")}, ${value("hour")}:${value("minute")} ${value("dayPeriod").toUpperCase()} UK time`;
 }
 
 function spokenList(names) {
@@ -95,8 +108,61 @@ function speedInsight(sites) {
   return text;
 }
 
-function timedNames(sites) {
-  return spokenList(sites.map((site) => `${site.name} in ${spokenDuration(site.ms)}`));
+function spokenSize(bytes) {
+  if (typeof bytes !== "number") return "";
+  if (bytes < 1024) return `${bytes} bytes`;
+  const kilobytes = bytes / 1024;
+  if (kilobytes < 10) {
+    const rounded = Math.round(kilobytes * 10) / 10;
+    return `${Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)} kilobytes`;
+  }
+  if (kilobytes < 1024) return `${Math.round(kilobytes)} kilobytes`;
+  return `${(Math.round(kilobytes / 102.4) / 10).toFixed(1)} megabytes`;
+}
+
+function spokenKind(contentType) {
+  const type = String(contentType || "").split(";")[0].trim().toLowerCase();
+  if (type === "text/html") return "an HTML page";
+  if (type === "application/json") return "JSON";
+  if (type === "text/plain") return "plain text";
+  if (type.startsWith("image/")) return "an image";
+  return "";
+}
+
+function hostOf(url) {
+  try {
+    return new URL(url).host.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+function siteReport(site) {
+  if (!site.up) return `${site.name} is down. It ${downReason(site)}.`;
+  const parts = [`${site.name} is up`, `status ${site.status}`];
+  if (typeof site.ttfb === "number" && site.ms - site.ttfb > 50) {
+    parts.push(`first byte in ${spokenDuration(site.ttfb)}`, `finished in ${spokenDuration(site.ms)}`);
+  } else {
+    parts.push(`responded in ${spokenDuration(site.ms)}`);
+  }
+  const size = spokenSize(site.bytes);
+  if (size) parts.push(size);
+  const kind = spokenKind(site.contentType);
+  if (kind) parts.push(kind);
+  let sentence = `${parts.join(", ")}.`;
+  if (site.redirected) {
+    const host = hostOf(site.finalUrl);
+    sentence += host ? ` It redirected to ${host}.` : " It redirected.";
+  }
+  return sentence;
+}
+
+function chunks(list, slots) {
+  if (!list.length || slots < 1) return [];
+  const size = Math.ceil(list.length / slots);
+  const groups = [];
+  for (let index = 0; index < list.length; index += size) groups.push(list.slice(index, index + size));
+  return groups;
 }
 
 export function buildAlexa(status, { id = randomUUID(), redirect = REDIRECT_URL } = {}) {
@@ -107,24 +173,19 @@ export function buildAlexa(status, { id = randomUUID(), redirect = REDIRECT_URL 
   const when = spokenClock(updated);
   const item = (uid, titleText, mainText) => ({ uid, updateDate: stamp, titleText, mainText, redirectionUrl: redirect });
 
-  let summary = `Checked at ${when}. No sites are configured.`;
-  if (down.length === 0 && up.length === 1) summary = `Checked at ${when}. ${up[0].name} is up. It responded in ${spokenDuration(up[0].ms)}.`;
-  else if (down.length === 0 && up.length > 1) summary = `Checked at ${when}. All ${up.length} sites are up. ${speedInsight(up)}`;
-  else if (down.length > 0) summary = `Checked at ${when}. ${up.length} of ${up.length + down.length} sites are up. ${speedInsight(up.length ? up : down)}`;
+  let summary = `Checked ${when}. No sites are configured.`;
+  if (down.length === 0 && up.length === 1) summary = `Checked ${when}. ${siteReport(up[0])}`;
+  else if (down.length === 0 && up.length > 1) summary = `Checked ${when}. All ${up.length} sites are up. ${speedInsight(up)}`;
+  else if (down.length > 0) summary = `Checked ${when}. ${up.length} of ${up.length + down.length} sites are up. ${speedInsight(up.length ? up : down)}`;
 
   const items = [item(id, "Site status", summary)];
-  if (down.length === 0 && up.length > 1) {
-    items.push(item(`${id}-speed`, "Response times", `Response times: ${timedNames(up)}.`));
-    return items;
+  if (up.length + down.length > 1) {
+    const groups = chunks([...down, ...up], 4);
+    for (const [index, group] of groups.entries()) {
+      const title = group.length === 1 ? group[0].name : "Site report";
+      items.push(item(`${id}-report-${index + 1}`, title, group.map(siteReport).join(" ")));
+    }
   }
-  if (!down.length) return items;
-
-  const extra = down.slice(3);
-  if (extra.length) items[0].mainText += ` Also down: ${spokenList(extra.map((site) => site.name))}.`;
-  for (const [index, site] of down.slice(0, 3).entries()) {
-    items.push(item(`${id}-down-${index + 1}`, site.name, `${site.name} is down. It ${downReason(site)}.`));
-  }
-  if (up.length) items.push(item(`${id}-up`, "Sites up", `These sites are up: ${timedNames(up)}.`));
   return items.slice(0, 5);
 }
 
