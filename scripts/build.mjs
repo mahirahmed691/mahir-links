@@ -591,6 +591,8 @@ h2 { font: 800 clamp(1.75rem, 6vw, 2.25rem)/1 var(--display); font-stretch: 85%;
 }
 .section-sub { color: var(--muted); margin: 0.5rem 0 1.25rem; }
 .biz-subhead { font: 700 1.125rem/1.2 var(--display); font-stretch: 85%; margin: 2rem 0 0.875rem; color: var(--muted); }
+.biz-set .biz-subhead { margin: 0 0 0.75rem; }
+.biz-set + .biz-set { margin-top: 1.75rem; }
 .biz-grid { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.875rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); }
 .biz {
   height: 100%; display: grid; grid-template-columns: auto 1fr; grid-template-areas: "icon top" "desc desc" "meta meta";
@@ -757,6 +759,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--pop); outline-o
     .biz-grid > li:last-child:nth-child(4n+1) { grid-column: 1 / -1; }
   }
 }
+.biz-grid[data-count="1"] > li:last-child:nth-child(n) { grid-column: auto; max-width: 28rem; }
 
 /* ---------- Phones: app-like ---------- */
 @media (max-width: 640px) {
@@ -774,18 +777,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--pop); outline-o
   .minibar-name { font: 800 1.25rem/1 var(--display); font-stretch: 85%; letter-spacing: -0.02em; }
   .share-sm { min-height: 40px; padding: 0 0.95rem; font-size: 0.875rem; }
   .biz-share { width: 44px; height: 44px; }
-
-  /* Businesses become a swipeable row with the next card peeking in */
-  .swipe-hint { display: block; margin: -0.75rem 0 0.75rem; font-size: 0.8125rem; font-weight: 600; color: var(--accent-text); }
-  .biz-grid {
-    grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 84%;
-    overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory;
-    scroll-padding-inline: 1rem; padding: 0.25rem 1rem 1rem; margin: 0 -1rem;
-    scrollbar-width: none; -webkit-overflow-scrolling: touch;
-  }
-  .biz-grid::-webkit-scrollbar { display: none; }
-  .biz-grid > li { scroll-snap-align: start; }
-  .biz-grid > li:has(.biz:not(.has-shot)) { align-self: stretch; }
+  .biz-shot { aspect-ratio: 16 / 9; }
 
   /* Bigger, thumb-friendly rows; socials share the width evenly */
   .links a { padding: 1rem 1.1rem; border-radius: 16px; }
@@ -1033,7 +1025,9 @@ function renderBusinesses() {
   const { title, more } = config.businesses;
   const liveCount = businesses.filter((x) => x.status === "Live").length;
   const cooking = businesses.filter((x) => x.status === "In build").map((x) => x.name);
-  const sub = `${words(liveCount)} live.${cooking.length ? ` ${listJoin(cooking)} ${cooking.length === 1 ? "is" : "are"} still in the oven.` : " Nothing in the oven, for now."}`;
+  const sub = cooking.length
+    ? `${words(liveCount)} live. ${listJoin(cooking)} ${cooking.length === 1 ? "is" : "are"} still in the oven.`
+    : `${words(liveCount)} live.`;
 
   const card = (x) => {
       const host = x.where || (x.status === "Live" ? new URL(x.url).hostname.replace(/^www\./, "") : "");
@@ -1054,10 +1048,16 @@ function renderBusinesses() {
         <a class="biz-app" href="${esc(x.appStore)}"${clickAttr(x.name + " app store")} rel="noopener"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M5 19.5h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Get it on the App Store</a>` : ""}
       </article></li>`;
   };
-  // Screenshot cards first, so image cards share rows with image cards.
-  const live = businesses.filter((x) => x.status === "Live").sort((a, b) => Boolean(b.image) - Boolean(a.image));
+  const live = businesses.filter((x) => x.status === "Live");
   const later = businesses.filter((x) => x.status !== "Live");
-  const cards = live.map(card).join("");
+  const groups = groupBusinesses(live);
+  const heads = groups.length > 1;
+  const sets = groups.map((group) => `
+      <section class="biz-set">${heads ? `
+        <h3 class="biz-subhead">${esc(group.label)}</h3>` : ""}
+        <ul class="biz-grid" data-count="${group.items.length}">${group.items.map(card).join("")}
+        </ul>
+      </section>`).join("");
   const laterCards = later.map(card).join("");
 
   return `
@@ -1066,14 +1066,29 @@ function renderBusinesses() {
         <h2 id="biz-title">${esc(title)}</h2>${more ? `
         <a href="${esc(more.url)}"${clickAttr("see-the-studio")} rel="noopener">${esc(more.label)}</a>` : ""}
       </div>
-      <p class="section-sub">${esc(sub)}</p>
-      <p class="swipe-hint" aria-hidden="true" data-swipe-hint data-total="${businesses.length}">Swipe to see all ${esc(words(businesses.length).toLowerCase())}</p>
-      <ul class="biz-grid">${cards}
-      </ul>${later.length ? `
+      <p class="section-sub">${esc(sub)}</p>${sets}${later.length ? `
       <h3 class="biz-subhead">In the oven</h3>
-      <ul class="biz-grid biz-grid-later">${laterCards}
+      <ul class="biz-grid biz-grid-later" data-count="${later.length}">${laterCards}
       </ul>` : ""}
     </section>`;
+}
+
+function groupBusinesses(items) {
+  const kinds = [
+    ["Own product", "Own products"],
+    ["Own house", "The house"],
+    ["Family", "Family"],
+    ["Commission", "Commissions"],
+  ];
+  const buckets = new Map(kinds.map(([key, label]) => [key, { label, items: [] }]));
+  const rest = [];
+  for (const item of items) {
+    if (buckets.has(item.kind)) buckets.get(item.kind).items.push(item);
+    else rest.push(item);
+  }
+  const groups = [...buckets.values()].filter((group) => group.items.length);
+  if (rest.length) groups.push({ label: "Also", items: rest });
+  return groups;
 }
 
 function renderPage() {

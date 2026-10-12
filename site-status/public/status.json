@@ -1,0 +1,86 @@
+{
+  "updated": "2026-10-11T23:55:27.511Z",
+  "ok": false,
+  "sites": [
+    {
+      "name": "Mahir Ahmed",
+      "url": "https://www.mahirahmed.link",
+      "up": true,
+      "status": 200,
+      "ms": 198,
+      "error": null
+    },
+    {
+      "name": "FlickFinder",
+      "url": "https://flickfinder-nu.vercel.app",
+      "up": true,
+      "status": 200,
+      "ms": 1855,
+      "error": null
+    },
+    {
+      "name": "Sakinah",
+      "url": "https://www.mysakinah.app",
+      "up": true,
+      "status": 200,
+      "ms": 517,
+      "error": null
+    },
+    {
+      "name": "Motiv",
+      "url": "https://www.motivcarhire.com",
+      "up": true,
+      "status": 200,
+      "ms": 1202,
+      "error": null
+    },
+    {
+      "name": "KARV'D",
+      "url": "https://www.karvd.uk",
+      "up": false,
+      "status": 503,
+      "ms": 313,
+      "error": null
+    },
+    {
+      "name": "Kiano London",
+      "url": "https://kiano.london",
+      "up": true,
+      "status": 200,
+      "ms": 627,
+      "error": null
+    },
+    {
+      "name": "Sweet Dezire",
+      "url": "https://sweetdezire.co.uk",
+      "up": true,
+      "status": 200,
+      "ms": 1429,
+      "error": null
+    },
+    {
+      "name": "Blanco Coffee House",
+      "url": "https://blancocoffeehouse.com",
+      "up": true,
+      "status": 200,
+      "ms": 704,
+      "error": null
+    },
+    {
+      "name": "RAPIDER",
+      "url": "https://rapider.co.uk",
+      "up": true,
+      "status": 200,
+      "ms": 1163,
+      "error": null
+    },
+    {
+      "name": "D Apartment Sylhet",
+      "url": "https://www.dapartmentsylhet.com",
+      "up": true,
+      "status": 200,
+      "ms": 644,
+      "error": null
+    }
+  ]
+}

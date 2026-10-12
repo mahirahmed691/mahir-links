@@ -1,0 +1,68 @@
+# Hourly uptime probes. Publishes site-status/public to GitHub Pages.
+# A down site is written into the feed; it does not fail the job.
+# Job names and the concurrency group are distinct from CI, Deploy, and Monitor.
+name: Site status
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "site-status/**"
+      - ".github/workflows/site-status.yml"
+  pull_request:
+    paths:
+      - "site-status/**"
+      - ".github/workflows/site-status.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-status
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: site-status
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Test
+        working-directory: site-status
+        run: npm test
+
+      - name: Probe sites and write the feed
+        if: github.event_name != 'pull_request'
+        working-directory: site-status
+        run: npm run check
+
+      - name: Upload GitHub Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site-status/public
+
+  publish:
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

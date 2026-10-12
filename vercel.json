@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "ignoreCommand": "bash site-status/scripts/vercel-ignore.sh",
   "outputDirectory": "dist",
   "cleanUrls": true,
   "trailingSlash": false,
