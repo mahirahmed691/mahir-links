@@ -3,3 +3,5 @@ api/
 node_modules/
 .DS_Store
 .vercel
+site-status/pitch.txt
+site-status/pitch-request.json
