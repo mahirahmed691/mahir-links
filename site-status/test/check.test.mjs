@@ -110,13 +110,18 @@ test("mainText names down sites and stays clear when everything is up", () => {
     ),
     { id: "status-down" },
   );
-  assert.match(down[0].mainText, /FlickFinder/);
   assert.match(down[0].mainText, /1 of 2 sites are up/);
+  assert.match(down[0].mainText, /UK time/);
+  const flicker = down.find((item) => item.titleText === "FlickFinder");
+  assert.match(flicker.mainText, /FlickFinder is down/);
+  assert.match(flicker.mainText, /status 500/);
+  assert.match(down.find((item) => item.titleText === "Sites up").mainText, /One/);
 
   const up = buildAlexa(
     buildStatus([{ name: "One", url: "https://one.example", up: true, status: 200, ms: 1, error: null }], updated),
     { id: "status-up" },
   );
-  assert.equal(up[0].mainText, "All 1 sites are up.");
-  assert.equal(up[0].mainText.includes("Down"), false);
+  assert.match(up[0].mainText, /One is up/);
+  assert.match(up[0].mainText, /UK time/);
+  assert.equal(up[0].mainText.includes("down"), false);
 });
