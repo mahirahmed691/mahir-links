@@ -50,23 +50,52 @@ export function buildStatus(results, updated) {
   };
 }
 
-export function buildAlexa(status, { id = randomUUID(), redirect = REDIRECT_URL } = {}) {
-  const down = status.sites.filter((site) => !site.up);
-  const total = status.sites.length;
-  const up = total - down.length;
-  const mainText = down.length
-    ? `${up} of ${total} sites are up. Down: ${down.map((site) => site.name).join(", ")}.`
-    : `All ${total} sites are up.`;
+function spokenClock(date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    hour: "numeric",
+    minute: "2-digit",
+    hourCycle: "h12",
+  }).formatToParts(date);
+  const value = (type) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("hour")}:${value("minute")} ${value("dayPeriod").toUpperCase()} UK time`;
+}
 
-  return [
-    {
-      uid: id,
-      updateDate: alexaTimestamp(new Date(status.updated)),
-      titleText: "Site status",
-      mainText,
-      redirectionUrl: redirect,
-    },
-  ];
+function spokenList(names) {
+  if (names.length <= 1) return names[0] ?? "";
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
+}
+
+function downReason(site) {
+  if (typeof site.status === "number") return `returned status ${site.status}`;
+  if (site.error === "timeout") return "timed out";
+  return "could not be reached";
+}
+
+export function buildAlexa(status, { id = randomUUID(), redirect = REDIRECT_URL } = {}) {
+  const updated = new Date(status.updated);
+  const stamp = alexaTimestamp(updated);
+  const down = status.sites.filter((site) => !site.up);
+  const up = status.sites.filter((site) => site.up);
+  const when = spokenClock(updated);
+  const item = (uid, titleText, mainText) => ({ uid, updateDate: stamp, titleText, mainText, redirectionUrl: redirect });
+
+  let summary = `Checked at ${when}. No sites are configured.`;
+  if (up.length + down.length === 1 && down.length === 0) summary = `Checked at ${when}. ${up[0].name} is up.`;
+  else if (down.length === 0 && up.length > 0) summary = `Checked at ${when}. All ${up.length} sites are up: ${spokenList(up.map((site) => site.name))}.`;
+  else if (down.length > 0) summary = `Checked at ${when}. ${up.length} of ${up.length + down.length} sites are up.`;
+
+  const items = [item(id, "Site status", summary)];
+  if (!down.length) return items;
+
+  const extra = down.slice(3);
+  if (extra.length) items[0].mainText += ` Also down: ${spokenList(extra.map((site) => site.name))}.`;
+  for (const [index, site] of down.slice(0, 3).entries()) {
+    items.push(item(`${id}-down-${index + 1}`, site.name, `${site.name} is down. It ${downReason(site)}.`));
+  }
+  if (up.length) items.push(item(`${id}-up`, "Sites up", `These sites are up: ${spokenList(up.map((site) => site.name))}.`));
+  return items.slice(0, 5);
 }
 
 export function renderPage(status) {
