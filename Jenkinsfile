@@ -10,20 +10,39 @@ pipeline {
   }
 
   parameters {
-    string(name: 'SITE_NAME', description: 'Name to use in the note, for example Tara\'s Bakes')
-    string(name: 'SITE_URL', description: 'Public https address of the shop')
+    choice(
+      name: 'SHOP',
+      choices: [
+        'Mahir Ahmed',
+        'FlickFinder',
+        'Sakinah',
+        'Motiv',
+        "KARV'D",
+        'Kiano London',
+        'Sweet Dezire',
+        'Blanco Coffee House',
+        'RAPIDER',
+        'D Apartment Sylhet',
+        'Abayas Boutique',
+        "Tara's Bakes",
+      ].join('\n'),
+      description: 'Shop to check. The address comes from the site list.'
+    )
   }
 
   stages {
     stage('Write the LinkedIn note') {
       steps {
         script {
-          def name = params.SITE_NAME?.trim()
-          def url = params.SITE_URL?.trim()
-          if (!name || !url) {
-            error 'Set SITE_NAME and SITE_URL, then run the job again.'
+          def shop = params.SHOP?.trim()
+          if (!shop) {
+            error 'Pick a shop from the list, then run the job again.'
           }
-          writeFile file: 'site-status/pitch-request.json', text: groovy.json.JsonOutput.toJson([name: name, url: url])
+          def url = shopUrl(readFile('site-status/sites.json'), shop)
+          if (!url) {
+            error "No address is listed for ${shop}."
+          }
+          writeFile file: 'site-status/pitch-request.json', text: groovy.json.JsonOutput.toJson([name: shop, url: url])
         }
         dir('site-status') {
           sh 'node --version'
@@ -41,4 +60,10 @@ pipeline {
       sh 'rm -f site-status/pitch-request.json site-status/pitch.txt'
     }
   }
+}
+
+@NonCPS
+String shopUrl(String raw, String shop) {
+  def parsed = new groovy.json.JsonSlurperClassic().parseText(raw)
+  return parsed.sites.find { it.name == shop }?.url
 }
