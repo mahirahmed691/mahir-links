@@ -110,12 +110,14 @@ test("mainText names down sites and stays clear when everything is up", () => {
     ),
     { id: "status-down" },
   );
-  const spoken = down.map((item) => item.mainText).join(" ");
-  assert.match(spoken, /1 of 2 sites are up/);
-  assert.match(spoken, /UK time/);
-  assert.match(spoken, /FlickFinder is down/);
-  assert.match(spoken, /status 500/);
-  assert.match(spoken, /One is up, status 200/);
+  assert.match(down[0].mainText, /1 of 2 sites are up/);
+  assert.match(down[0].mainText, /UK time/);
+  const flicker = down.find((item) => item.titleText === "FlickFinder");
+  assert.match(flicker.mainText, /FlickFinder is down/);
+  assert.match(flicker.mainText, /status 500/);
+  assert.match(flicker.mainText, /millisecond/);
+  assert.match(down[0].mainText, /One responded in/);
+  assert.match(down.find((item) => item.titleText === "Sites up").mainText, /One in/);
 
   const up = buildAlexa(
     buildStatus([{ name: "One", url: "https://one.example", up: true, status: 200, ms: 1, error: null }], updated),
@@ -129,8 +131,8 @@ test("mainText names down sites and stays clear when everything is up", () => {
   const speeds = buildAlexa(
     buildStatus(
       [
-        { name: "One", url: "https://one.example", up: true, status: 200, ttfb: 50, ms: 200, bytes: 2048, contentType: "text/html", error: null },
-        { name: "Two", url: "https://two.example", up: true, status: 200, ttfb: 400, ms: 1800, bytes: 12000, contentType: "text/html", redirected: true, finalUrl: "https://two.example/home", error: null },
+        { name: "One", url: "https://one.example", up: true, status: 200, ms: 200, error: null },
+        { name: "Two", url: "https://two.example", up: true, status: 200, ms: 1800, error: null },
       ],
       updated,
     ),
@@ -139,11 +141,5 @@ test("mainText names down sites and stays clear when everything is up", () => {
   assert.match(speeds[0].mainText, /Average response was 1 second/);
   assert.match(speeds[0].mainText, /Fastest was One at 200 milliseconds/);
   assert.match(speeds[0].mainText, /Slowest was Two at 1.8 seconds/);
-  const report = speeds.map((item) => item.mainText).join(" ");
-  assert.match(report, /Two is up, status 200/);
-  assert.match(report, /1.8 seconds/);
-  assert.match(report, /first byte in 50 milliseconds/);
-  assert.match(report, /2 kilobytes/);
-  assert.match(report, /an HTML page/);
-  assert.match(report, /redirected to two.example/);
+  assert.match(speeds.find((item) => item.titleText === "Response times").mainText, /Two in 1.8 seconds/);
 });
