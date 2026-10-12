@@ -21,11 +21,9 @@ A site that is down is recorded in the feed. It does not fail the command. Alexa
 
 ## GitHub Actions
 
-`.github/workflows/site-status.yml` runs at minute 17 of every hour. On `main` it uploads `public/` to GitHub Pages. The feed is then:
+`.github/workflows/site-status.yml` runs at minute 17 of every hour. On `main` it uploads `public/` as the `site-status-feed` artifact.
 
-`https://mahirahmed691.github.io/mahir-links/alexa.json`
-
-Pages for this repo was unused. In the GitHub repo settings, set Pages → Build and deployment → Source to **GitHub Actions**. The first successful run on `main` publishes the feed.
+GitHub Pages cannot host that feed. The repository is private, and enabling Pages returns: "Your current plan does not support GitHub Pages for this repository." Alexa needs a public HTTPS URL, so the feed still has to be served from the live site (`https://www.mahirahmed.link/alexa.json`) or the repository has to be public before Pages can be turned on.
 
 ## Alexa
 
