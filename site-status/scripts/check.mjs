@@ -67,10 +67,36 @@ function spokenList(names) {
   return `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
 }
 
+function spokenDuration(ms) {
+  const rounded = Math.max(0, Math.round(Number(ms) || 0));
+  if (rounded < 1000) return `${rounded} millisecond${rounded === 1 ? "" : "s"}`;
+  const tenths = Math.round(rounded / 100) / 10;
+  const text = Number.isInteger(tenths) ? String(tenths) : tenths.toFixed(1);
+  return `${text} second${tenths === 1 ? "" : "s"}`;
+}
+
 function downReason(site) {
-  if (typeof site.status === "number") return `returned status ${site.status}`;
-  if (site.error === "timeout") return "timed out";
-  return "could not be reached";
+  const timing = ` after ${spokenDuration(site.ms)}`;
+  if (typeof site.status === "number") return `returned status ${site.status}${timing}`;
+  if (site.error === "timeout") return `timed out${timing}`;
+  return `could not be reached${timing}`;
+}
+
+function speedInsight(sites) {
+  if (!sites.length) return "";
+  if (sites.length === 1) return `${sites[0].name} responded in ${spokenDuration(sites[0].ms)}.`;
+  const average = Math.round(sites.reduce((sum, site) => sum + site.ms, 0) / sites.length);
+  const slowest = sites.reduce((slow, site) => (site.ms > slow.ms ? site : slow));
+  const fastest = sites.reduce((fast, site) => (site.ms < fast.ms ? site : fast));
+  let text = `Average response was ${spokenDuration(average)}.`;
+  if (fastest.ms !== slowest.ms) {
+    text += ` Fastest was ${fastest.name} at ${spokenDuration(fastest.ms)}. Slowest was ${slowest.name} at ${spokenDuration(slowest.ms)}.`;
+  }
+  return text;
+}
+
+function timedNames(sites) {
+  return spokenList(sites.map((site) => `${site.name} in ${spokenDuration(site.ms)}`));
 }
 
 export function buildAlexa(status, { id = randomUUID(), redirect = REDIRECT_URL } = {}) {
@@ -82,11 +108,15 @@ export function buildAlexa(status, { id = randomUUID(), redirect = REDIRECT_URL 
   const item = (uid, titleText, mainText) => ({ uid, updateDate: stamp, titleText, mainText, redirectionUrl: redirect });
 
   let summary = `Checked at ${when}. No sites are configured.`;
-  if (up.length + down.length === 1 && down.length === 0) summary = `Checked at ${when}. ${up[0].name} is up.`;
-  else if (down.length === 0 && up.length > 0) summary = `Checked at ${when}. All ${up.length} sites are up: ${spokenList(up.map((site) => site.name))}.`;
-  else if (down.length > 0) summary = `Checked at ${when}. ${up.length} of ${up.length + down.length} sites are up.`;
+  if (down.length === 0 && up.length === 1) summary = `Checked at ${when}. ${up[0].name} is up. It responded in ${spokenDuration(up[0].ms)}.`;
+  else if (down.length === 0 && up.length > 1) summary = `Checked at ${when}. All ${up.length} sites are up. ${speedInsight(up)}`;
+  else if (down.length > 0) summary = `Checked at ${when}. ${up.length} of ${up.length + down.length} sites are up. ${speedInsight(up.length ? up : down)}`;
 
   const items = [item(id, "Site status", summary)];
+  if (down.length === 0 && up.length > 1) {
+    items.push(item(`${id}-speed`, "Response times", `Response times: ${timedNames(up)}.`));
+    return items;
+  }
   if (!down.length) return items;
 
   const extra = down.slice(3);
@@ -94,7 +124,7 @@ export function buildAlexa(status, { id = randomUUID(), redirect = REDIRECT_URL 
   for (const [index, site] of down.slice(0, 3).entries()) {
     items.push(item(`${id}-down-${index + 1}`, site.name, `${site.name} is down. It ${downReason(site)}.`));
   }
-  if (up.length) items.push(item(`${id}-up`, "Sites up", `These sites are up: ${spokenList(up.map((site) => site.name))}.`));
+  if (up.length) items.push(item(`${id}-up`, "Sites up", `These sites are up: ${timedNames(up)}.`));
   return items.slice(0, 5);
 }
 

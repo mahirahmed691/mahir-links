@@ -115,13 +115,31 @@ test("mainText names down sites and stays clear when everything is up", () => {
   const flicker = down.find((item) => item.titleText === "FlickFinder");
   assert.match(flicker.mainText, /FlickFinder is down/);
   assert.match(flicker.mainText, /status 500/);
-  assert.match(down.find((item) => item.titleText === "Sites up").mainText, /One/);
+  assert.match(flicker.mainText, /millisecond/);
+  assert.match(down[0].mainText, /One responded in/);
+  assert.match(down.find((item) => item.titleText === "Sites up").mainText, /One in/);
 
   const up = buildAlexa(
     buildStatus([{ name: "One", url: "https://one.example", up: true, status: 200, ms: 1, error: null }], updated),
     { id: "status-up" },
   );
   assert.match(up[0].mainText, /One is up/);
+  assert.match(up[0].mainText, /1 millisecond/);
   assert.match(up[0].mainText, /UK time/);
   assert.equal(up[0].mainText.includes("down"), false);
+
+  const speeds = buildAlexa(
+    buildStatus(
+      [
+        { name: "One", url: "https://one.example", up: true, status: 200, ms: 200, error: null },
+        { name: "Two", url: "https://two.example", up: true, status: 200, ms: 1800, error: null },
+      ],
+      updated,
+    ),
+    { id: "status-speed" },
+  );
+  assert.match(speeds[0].mainText, /Average response was 1 second/);
+  assert.match(speeds[0].mainText, /Fastest was One at 200 milliseconds/);
+  assert.match(speeds[0].mainText, /Slowest was Two at 1.8 seconds/);
+  assert.match(speeds.find((item) => item.titleText === "Response times").mainText, /Two in 1.8 seconds/);
 });
