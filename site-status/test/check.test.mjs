@@ -110,15 +110,15 @@ test("mainText names down sites and stays clear when everything is up", () => {
     ),
     { id: "status-down" },
   );
-  assert.match(down[0].mainText, /1 of 2 sites are up/);
+  assert.match(down[0].mainText, /Only 1 of the 2 is up/);
   assert.match(down[0].mainText, /UK time/);
   const flicker = down.find((item) => item.titleText === "FlickFinder");
   assert.match(flicker.mainText, /FlickFinder is down/);
   assert.match(flicker.mainText, /status 500/);
   assert.match(flicker.mainText, /millisecond/);
-  assert.match(flicker.mainText, /Fix: Check the host logs/);
-  assert.match(down[0].mainText, /The fix for FlickFinder: Check the host logs/);
-  assert.match(down.map((item) => item.mainText).join(" "), /One is up, status 200/);
+  assert.match(flicker.mainText, /I'd check the host logs/);
+  assert.match(down[0].mainText, /Start with FlickFinder\. I'd check the host logs/);
+  assert.match(down.map((item) => item.mainText).join(" "), /One is up\. It answered in 1 millisecond/);
 
   const up = buildAlexa(
     buildStatus([{ name: "One", url: "https://one.example", up: true, status: 200, ms: 1, error: null }], updated),
@@ -128,7 +128,7 @@ test("mainText names down sites and stays clear when everything is up", () => {
   assert.match(up[0].mainText, /1 millisecond/);
   assert.match(up[0].mainText, /UK time/);
   assert.equal(up[0].mainText.includes("down"), false);
-  assert.equal(up[0].mainText.includes("Fix:"), false);
+  assert.equal(up[0].mainText.includes("I'd"), false);
 
   const speeds = buildAlexa(
     buildStatus(
@@ -140,16 +140,15 @@ test("mainText names down sites and stays clear when everything is up", () => {
     ),
     { id: "status-speed" },
   );
-  assert.match(speeds[0].mainText, /Average response was 1 second/);
-  assert.match(speeds[0].mainText, /Fastest was One at 200 milliseconds/);
-  assert.match(speeds[0].mainText, /Slowest was Two at 1.8 seconds/);
+  assert.match(speeds[0].mainText, /On average they took 1 second/);
+  assert.match(speeds[0].mainText, /One was the quickest, at 200 milliseconds/);
+  assert.match(speeds[0].mainText, /Two was the slowest, at 1\.8 seconds/);
   const report = speeds.map((item) => item.mainText).join(" ");
-  assert.match(report, /Two is up, status 200/);
-  assert.match(report, /1.8 seconds/);
-  assert.match(report, /first byte in 50 milliseconds/);
+  assert.match(report, /Two is up/);
+  assert.match(report, /finished in 1\.8 seconds/);
+  assert.match(report, /started answering in 50 milliseconds/);
   assert.match(report, /2 kilobytes/);
-  assert.match(report, /an HTML page/);
-  assert.match(report, /redirected to two.example/);
+  assert.match(report, /sent me on to two\.example/);
 
   const changed = buildAlexa(
     buildStatus(
@@ -162,9 +161,9 @@ test("mainText names down sites and stays clear when everything is up", () => {
     },
   );
   const changeText = changed.map((item) => item.mainText).join(" ");
-  assert.match(changeText, /KARV'D has recovered/);
-  assert.match(changeText, /page title is KARV'D \| Order/);
-  assert.match(changeText, /certificate expires in 12 days/);
+  assert.match(changeText, /KARV'D is back/);
+  assert.match(changeText, /page calls itself KARV'D, Order/);
+  assert.match(changeText, /certificate runs out in 12 days/);
 
   const slower = buildAlexa(
     buildStatus(
@@ -185,7 +184,7 @@ test("mainText names down sites and stays clear when everything is up", () => {
       },
     },
   );
-  assert.match(slower[0].mainText, /Two is 1.4 seconds slower than last time/);
+  assert.match(slower[0].mainText, /Two is 1\.4 seconds slower than an hour ago/);
 
   const heavy = buildAlexa(
     buildStatus(
@@ -198,6 +197,6 @@ test("mainText names down sites and stays clear when everything is up", () => {
     { id: "status-fix" },
   );
   const fixText = heavy.map((item) => item.mainText).join(" ");
-  assert.match(fixText, /The fix for Abayas Boutique: Cache the homepage, and cut the page down from 1\.4 megabytes/);
-  assert.equal(fixText.includes("The fix for One"), false);
+  assert.match(fixText, /Abayas Boutique is the one I'd fix\. I'd cache the homepage, and cut the page down from 1\.4 megabytes/);
+  assert.equal(fixText.includes("One is the one I'd fix"), false);
 });

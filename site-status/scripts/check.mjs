@@ -77,7 +77,16 @@ function spokenClock(date) {
     hourCycle: "h12",
   }).formatToParts(date);
   const value = (type) => parts.find((part) => part.type === type)?.value ?? "";
-  return `${value("hour")}:${value("minute")} ${value("dayPeriod").toUpperCase()} UK time`;
+  const hour = Number(value("hour"));
+  const minute = value("minute");
+  const period = value("dayPeriod").toLowerCase();
+  const morning = period.startsWith("a") || period.includes("morning") || period.includes("night");
+  let dayPart = "the afternoon";
+  if (period.includes("noon") || (!morning && hour === 12)) dayPart = "the middle of the day";
+  else if (morning && hour === 12) dayPart = "the middle of the night";
+  else if (morning) dayPart = "the morning";
+  const time = minute === "00" ? `${hour} o'clock` : `${hour}:${minute}`;
+  return `${time} in ${dayPart}, UK time`;
 }
 
 function spokenList(names) {
@@ -95,21 +104,23 @@ function spokenDuration(ms) {
 }
 
 function downReason(site) {
-  const timing = ` after ${spokenDuration(site.ms)}`;
-  if (typeof site.status === "number") return `returned status ${site.status}${timing}`;
-  if (site.error === "timeout") return `timed out${timing}`;
-  return `could not be reached${timing}`;
+  const timing = spokenDuration(site.ms);
+  if (typeof site.status === "number" && site.status === 404) return `The page wasn't there. That's status ${site.status}, after ${timing}.`;
+  if (typeof site.status === "number" && site.status >= 500) return `The server came back with an error, status ${site.status}, after ${timing}.`;
+  if (typeof site.status === "number") return `It came back with status ${site.status}, after ${timing}.`;
+  if (site.error === "timeout") return `I waited ${timing}, and it never answered.`;
+  return `I couldn't reach it. I gave it ${timing}.`;
 }
 
 function speedInsight(sites) {
   if (!sites.length) return "";
-  if (sites.length === 1) return `${sites[0].name} responded in ${spokenDuration(sites[0].ms)}.`;
+  if (sites.length === 1) return `${sites[0].name} took ${spokenDuration(sites[0].ms)}.`;
   const average = Math.round(sites.reduce((sum, site) => sum + site.ms, 0) / sites.length);
   const slowest = sites.reduce((slow, site) => (site.ms > slow.ms ? site : slow));
   const fastest = sites.reduce((fast, site) => (site.ms < fast.ms ? site : fast));
-  let text = `Average response was ${spokenDuration(average)}.`;
+  let text = `On average they took ${spokenDuration(average)}.`;
   if (fastest.ms !== slowest.ms) {
-    text += ` Fastest was ${fastest.name} at ${spokenDuration(fastest.ms)}. Slowest was ${slowest.name} at ${spokenDuration(slowest.ms)}.`;
+    text += ` ${fastest.name} was the quickest, at ${spokenDuration(fastest.ms)}. ${slowest.name} was the slowest, at ${spokenDuration(slowest.ms)}.`;
   }
   return text;
 }
@@ -159,7 +170,9 @@ function decodeEntities(value) {
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'");
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, num) => String.fromCodePoint(Number(num)))
+    .replace(/&apos;/gi, "'");
 }
 
 export function certificateDays(url, now = Date.now()) {
@@ -190,25 +203,51 @@ export function certificateDays(url, now = Date.now()) {
   });
 }
 
-export function compareSites(current, previous) {
-  if (!previous?.sites) return [];
+function collectChanges(current, previous) {
+  if (!previous?.sites) return null;
   const prior = new Map(previous.sites.map((site) => [site.name, site]));
-  const notes = [];
+  const recovered = [];
+  const fallen = [];
+  const slower = [];
+  const quicker = [];
   for (const site of current) {
     const old = prior.get(site.name);
     if (!old) continue;
-    if (!old.up && site.up) notes.push(`${site.name} has recovered.`);
-    else if (old.up && !site.up) notes.push(`${site.name} has gone down.`);
+    if (!old.up && site.up) recovered.push(site.name);
+    else if (old.up && !site.up) fallen.push(site.name);
     else if (old.up && site.up && old.ms > 0 && typeof site.ms === "number") {
       const delta = site.ms - old.ms;
       if (Math.abs(delta) >= 300 && Math.abs(delta) / old.ms >= 0.5) {
-        notes.push(delta > 0
-          ? `${site.name} is ${spokenDuration(delta)} slower than last time.`
-          : `${site.name} is ${spokenDuration(-delta)} faster than last time.`);
+        (delta > 0 ? slower : quicker).push({ name: site.name, delta: Math.abs(delta) });
       }
     }
   }
-  return notes;
+  return { recovered, fallen, slower, quicker };
+}
+
+function speakPace(items, word) {
+  if (!items.length) return "";
+  if (items.length === 1) return `${items[0].name} is ${spokenDuration(items[0].delta)} ${word} than an hour ago.`;
+  const bits = items.map((item) => `${item.name} is ${spokenDuration(item.delta)} ${word}`);
+  return `Compared with an hour ago, ${spokenList(bits)}.`;
+}
+
+function speakChangeLines(notes) {
+  const lines = [];
+  if (notes.recovered.length === 1) lines.push(`${notes.recovered[0]} is back.`);
+  else if (notes.recovered.length) lines.push(`${spokenList(notes.recovered)} are back.`);
+  if (notes.fallen.length === 1) lines.push(`${notes.fallen[0]} has just gone down.`);
+  else if (notes.fallen.length) lines.push(`${spokenList(notes.fallen)} have just gone down.`);
+  const slower = speakPace(notes.slower, "slower");
+  const quicker = speakPace(notes.quicker, "quicker");
+  if (slower) lines.push(slower);
+  if (quicker) lines.push(quicker);
+  return lines;
+}
+
+export function compareSites(current, previous) {
+  const notes = collectChanges(current, previous);
+  return notes ? speakChangeLines(notes) : [];
 }
 
 const HEAVY_BYTES = 500 * 1024;
@@ -217,61 +256,65 @@ const SLOW_MS = 2500;
 
 function siteFix(site) {
   if (!site.up) {
-    if (site.error === "timeout") return "Check that the host is still running. The check gave up waiting.";
-    if (site.error === "network") return "Check the domain. The site could not be reached.";
-    if (site.status === 404) return "Check the address. The page was not found.";
-    if (typeof site.status === "number" && site.status >= 500) return "Check the host logs. The server returned an error.";
-    return "Check the host.";
+    if (site.error === "timeout") return "I'd check that the host is still running.";
+    if (site.error === "network") return "I'd check the domain.";
+    if (site.status === 404) return "I'd check the address.";
+    if (typeof site.status === "number" && site.status >= 500) return "I'd check the host logs.";
+    return "I'd check the host.";
   }
-  if (typeof site.certDays === "number" && site.certDays < 0) return "Renew the certificate. It has expired.";
-  if (typeof site.certDays === "number" && site.certDays <= 30) return "Renew the certificate before it expires.";
+  if (typeof site.certDays === "number" && site.certDays < 0) return "I'd renew the certificate. It's already expired.";
+  if (typeof site.certDays === "number" && site.certDays <= 30) return "I'd renew the certificate before it runs out.";
   const heavy = typeof site.bytes === "number" && site.bytes >= HEAVY_BYTES;
   const slowStart = typeof site.ttfb === "number" && site.ttfb >= SLOW_START_MS;
   const slow = typeof site.ms === "number" && site.ms >= SLOW_MS;
-  if (slowStart && heavy) return `Cache the homepage, and cut the page down from ${spokenSize(site.bytes)}.`;
-  if (slowStart) return "Cache the homepage. The server was slow to send the first byte.";
-  if (heavy) return `Shrink the homepage. It is ${spokenSize(site.bytes)}.`;
-  if (slow) return "Cache the homepage. The response was slow.";
+  if (slowStart && heavy) return `I'd cache the homepage, and cut the page down from ${spokenSize(site.bytes)}.`;
+  if (slowStart) return "I'd cache the homepage. The server sat there before it started answering.";
+  if (heavy) return `I'd shrink the homepage. It's ${spokenSize(site.bytes)}.`;
+  if (slow) return "I'd cache the homepage. It took too long to answer.";
   return "";
 }
 
 function mainFix(sites) {
   const down = sites.find((site) => !site.up);
-  if (down) return `The fix for ${down.name}: ${siteFix(down)}`;
+  if (down) return `Start with ${down.name}. ${siteFix(down)}`;
   const certificate = sites.find((site) => typeof site.certDays === "number" && site.certDays <= 30);
-  if (certificate) return `The fix for ${certificate.name}: ${siteFix(certificate)}`;
+  if (certificate) return `${certificate.name} needs a new certificate. ${siteFix(certificate)}`;
   const slowest = sites
     .filter((site) => siteFix(site))
     .sort((left, right) => (right.ms || 0) - (left.ms || 0))[0];
-  return slowest ? `The fix for ${slowest.name}: ${siteFix(slowest)}` : "";
+  return slowest ? `${slowest.name} is the one I'd fix. ${siteFix(slowest)}` : "";
+}
+
+function spokenTitle(title) {
+  return title.replace(/\s*[|•·–—]\s*/g, ", ").replace(/&/g, " and ").replace(/\s+/g, " ").trim();
 }
 
 function siteReport(site) {
   if (!site.up) {
     const fix = siteFix(site);
-    return `${site.name} is down. It ${downReason(site)}.${fix ? ` Fix: ${fix}` : ""}`;
+    return `${site.name} is down. ${downReason(site)}${fix ? ` ${fix}` : ""}`;
   }
-  const parts = [`${site.name} is up`, `status ${site.status}`];
+  const sentences = [`${site.name} is up.`];
   if (typeof site.ttfb === "number" && site.ms - site.ttfb > 50) {
-    parts.push(`first byte in ${spokenDuration(site.ttfb)}`, `finished in ${spokenDuration(site.ms)}`);
+    sentences.push(`It started answering in ${spokenDuration(site.ttfb)}, and finished in ${spokenDuration(site.ms)}.`);
   } else {
-    parts.push(`responded in ${spokenDuration(site.ms)}`);
+    sentences.push(`It answered in ${spokenDuration(site.ms)}.`);
   }
   const size = spokenSize(site.bytes);
-  if (size) parts.push(size);
   const kind = spokenKind(site.contentType);
-  if (kind) parts.push(kind);
-  let sentence = `${parts.join(", ")}.`;
+  if (size && kind && kind !== "an HTML page") sentences.push(`That's ${size}, and it's ${kind}.`);
+  else if (size) sentences.push(`The page is ${size}.`);
+  else if (kind && kind !== "an HTML page") sentences.push(`It's ${kind}.`);
   if (site.redirected) {
     const host = hostOf(site.finalUrl);
-    sentence += host ? ` It redirected to ${host}.` : " It redirected.";
+    sentences.push(host ? `It sent me on to ${host}.` : "It sent me somewhere else.");
   }
-  if (site.title && site.title.toLowerCase() !== site.name.toLowerCase()) sentence += ` The page title is ${site.title}.`;
-  if (typeof site.certDays === "number" && site.certDays < 0) sentence += " Its certificate has expired.";
-  else if (typeof site.certDays === "number" && site.certDays <= 30) sentence += ` Its certificate expires in ${site.certDays} day${site.certDays === 1 ? "" : "s"}.`;
+  if (site.title && site.title.toLowerCase() !== site.name.toLowerCase()) sentences.push(`The page calls itself ${spokenTitle(site.title)}.`);
+  if (typeof site.certDays === "number" && site.certDays < 0) sentences.push("The certificate has already expired.");
+  else if (typeof site.certDays === "number" && site.certDays <= 30) sentences.push(`The certificate runs out in ${site.certDays} day${site.certDays === 1 ? "" : "s"}.`);
   const fix = siteFix(site);
-  if (fix) sentence += ` Fix: ${fix}`;
-  return sentence;
+  if (fix) sentences.push(fix);
+  return sentences.join(" ");
 }
 
 function chunks(list, slots) {
@@ -290,14 +333,15 @@ export function buildAlexa(status, { id = randomUUID(), redirect = REDIRECT_URL,
   const when = spokenClock(updated);
   const item = (uid, titleText, mainText) => ({ uid, updateDate: stamp, titleText, mainText, redirectionUrl: redirect });
 
-  let summary = `Checked ${when}. No sites are configured.`;
-  if (down.length === 0 && up.length === 1) summary = `Checked ${when}. ${siteReport(up[0])}`;
-  else if (down.length === 0 && up.length > 1) summary = `Checked ${when}. All ${up.length} sites are up. ${speedInsight(up)}`;
-  else if (down.length > 0) summary = `Checked ${when}. ${up.length} of ${up.length + down.length} sites are up. ${speedInsight(up.length ? up : down)}`;
-  const changes = compareSites(status.sites, previous);
+  const total = up.length + down.length;
+  let summary = `It's ${when}. I don't have any sites to check.`;
+  if (down.length === 0 && up.length === 1) summary = `It's ${when}. ${siteReport(up[0])}`;
+  else if (down.length === 0 && up.length > 1) summary = `It's ${when}. I checked ${up.length} sites, and they're all up. ${speedInsight(up)}`;
+  else if (down.length > 0 && up.length === 0) summary = `It's ${when}. None of them are up. ${speedInsight(down)}`;
+  else if (down.length > 0) summary = `It's ${when}. Only ${up.length} of the ${total} ${up.length === 1 ? "is" : "are"} up. ${speedInsight(up)}`;
   if (previous?.sites) {
-    const since = previous.updated ? `since ${spokenClock(new Date(previous.updated))}` : "since the last check";
-    summary += changes.length ? ` ${changes.join(" ")}` : ` Nothing notable has changed ${since}.`;
+    const changes = compareSites(status.sites, previous);
+    summary += changes.length ? ` ${changes.join(" ")}` : " Nothing much has changed since I last looked.";
   }
   if (status.sites.length > 1) {
     const fix = mainFix(status.sites);
