@@ -116,8 +116,7 @@ test("mainText names down sites and stays clear when everything is up", () => {
   assert.match(flicker.mainText, /FlickFinder is down/);
   assert.match(flicker.mainText, /status 500/);
   assert.match(flicker.mainText, /millisecond/);
-  assert.match(down[0].mainText, /One responded in/);
-  assert.match(down.find((item) => item.titleText === "Sites up").mainText, /One in/);
+  assert.match(down.map((item) => item.mainText).join(" "), /One is up, status 200/);
 
   const up = buildAlexa(
     buildStatus([{ name: "One", url: "https://one.example", up: true, status: 200, ms: 1, error: null }], updated),
@@ -131,8 +130,8 @@ test("mainText names down sites and stays clear when everything is up", () => {
   const speeds = buildAlexa(
     buildStatus(
       [
-        { name: "One", url: "https://one.example", up: true, status: 200, ms: 200, error: null },
-        { name: "Two", url: "https://two.example", up: true, status: 200, ms: 1800, error: null },
+        { name: "One", url: "https://one.example", up: true, status: 200, ttfb: 50, ms: 200, bytes: 2048, contentType: "text/html", error: null },
+        { name: "Two", url: "https://two.example", up: true, status: 200, ttfb: 400, ms: 1800, bytes: 12000, contentType: "text/html", redirected: true, finalUrl: "https://two.example/home", error: null },
       ],
       updated,
     ),
@@ -141,5 +140,47 @@ test("mainText names down sites and stays clear when everything is up", () => {
   assert.match(speeds[0].mainText, /Average response was 1 second/);
   assert.match(speeds[0].mainText, /Fastest was One at 200 milliseconds/);
   assert.match(speeds[0].mainText, /Slowest was Two at 1.8 seconds/);
-  assert.match(speeds.find((item) => item.titleText === "Response times").mainText, /Two in 1.8 seconds/);
+  const report = speeds.map((item) => item.mainText).join(" ");
+  assert.match(report, /Two is up, status 200/);
+  assert.match(report, /1.8 seconds/);
+  assert.match(report, /first byte in 50 milliseconds/);
+  assert.match(report, /2 kilobytes/);
+  assert.match(report, /an HTML page/);
+  assert.match(report, /redirected to two.example/);
+
+  const changed = buildAlexa(
+    buildStatus(
+      [{ name: "KARV'D", url: "https://www.karvd.uk", up: true, status: 200, ms: 900, title: "KARV'D | Order", certDays: 12, error: null }],
+      updated,
+    ),
+    {
+      id: "status-change",
+      previous: { updated: "2026-10-12T00:17:00.000Z", sites: [{ name: "KARV'D", up: false, status: 503, ms: 300 }] },
+    },
+  );
+  const changeText = changed.map((item) => item.mainText).join(" ");
+  assert.match(changeText, /KARV'D has recovered/);
+  assert.match(changeText, /page title is KARV'D \| Order/);
+  assert.match(changeText, /certificate expires in 12 days/);
+
+  const slower = buildAlexa(
+    buildStatus(
+      [
+        { name: "One", url: "https://one.example", up: true, status: 200, ms: 200, error: null },
+        { name: "Two", url: "https://two.example", up: true, status: 200, ms: 1800, error: null },
+      ],
+      updated,
+    ),
+    {
+      id: "status-slower",
+      previous: {
+        updated: "2026-10-11T23:17:00.000Z",
+        sites: [
+          { name: "One", up: true, ms: 200 },
+          { name: "Two", up: true, ms: 400 },
+        ],
+      },
+    },
+  );
+  assert.match(slower[0].mainText, /Two is 1.4 seconds slower than last time/);
 });
