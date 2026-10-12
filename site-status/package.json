@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node scripts/check.mjs"
+    "check": "node scripts/check.mjs",
+    "pitch": "node scripts/pitch.mjs"
   },
   "engines": {
     "node": ">=20"
