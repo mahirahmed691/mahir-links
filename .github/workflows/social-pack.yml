@@ -1,4 +1,5 @@
-# Monday morning pack: one niche, four posts, four pictures. The zip is for pasting.
+# Monday morning pack: every niche, four posts, four pictures. The index names the one to paste.
+# Nothing is published. 06:00 UTC is 07:00 in British Summer Time and 06:00 in winter.
 # Nothing is published. 06:00 UTC is 07:00 in British Summer Time and 06:00 in winter.
 name: Social pack
 
@@ -25,7 +26,7 @@ permissions:
 jobs:
   pack:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -41,7 +42,7 @@ jobs:
         working-directory: site-status
         run: npm install --no-save playwright@1.55.1 && npx playwright install --with-deps chromium
 
-      - name: Render this week's pack
+      - name: Render every niche and check the pictures
         working-directory: site-status
         env:
           NICHE: ${{ inputs.niche }}

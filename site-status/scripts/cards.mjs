@@ -57,39 +57,48 @@ function escapeHtml(value) {
 
 function typeSize(text, size) {
   const portrait = size.height > size.width;
-  if (text.length > 260) return portrait ? 42 : 32;
-  if (text.length > 180) return portrait ? 48 : 36;
-  return portrait ? 56 : 42;
+  if (text.length > 260) return portrait ? 40 : 28;
+  if (text.length > 180) return portrait ? 46 : 32;
+  return portrait ? 52 : 36;
 }
 
-export function cardHtml(post, who = author) {
+export function cardHtml(post, nicheLabel, who = author) {
   const size = cardSizes[post.channel];
   if (!size) throw new Error(`No card size for ${post.channel}.`);
+  if (!nicheLabel) throw new Error("A card needs its niche.");
+  const portrait = size.height > size.width;
   const type = typeSize(post.text, size);
+  const title = portrait ? 104 : 84;
   return `<!doctype html><html><head><meta charset="utf-8">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,800&family=Instrument+Sans:wght@500;600&display=swap">
 <style>
   * { box-sizing: border-box; margin: 0; }
   html, body { width: ${size.width}px; height: ${size.height}px; overflow: hidden; }
-  body { padding: ${size.height > size.width ? 88 : 64}px; display: flex; flex-direction: column;
+  body { padding: ${portrait ? 96 : 56}px; display: flex; flex-direction: column;
     background: #F4F2FF; color: #14102A; font-family: "Instrument Sans", sans-serif;
     background-image: radial-gradient(rgba(111, 75, 255, 0.18) 1.5px, transparent 1.8px); background-size: 28px 28px; }
   .pill { align-self: flex-start; background: #FFD23F; border: 3px solid #14102A; border-radius: 999px;
-    padding: 10px 22px; font-weight: 600; font-size: ${size.height > size.width ? 32 : 26}px; }
-  h1 { margin-top: 36px; font: 800 ${type}px/1.2 "Bricolage Grotesque", "Arial Narrow", sans-serif;
-    font-stretch: 80%; letter-spacing: -0.03em; }
+    padding: 10px 22px; font-weight: 600; font-size: ${portrait ? 32 : 24}px; }
+  h1 { margin-top: ${portrait ? 56 : 28}px; font: 800 ${title}px/0.92 "Bricolage Grotesque", "Arial Narrow", sans-serif;
+    font-stretch: 78%; letter-spacing: -0.04em; max-width: ${portrait ? "8em" : "none"}; }
+  .rule { width: ${portrait ? 220 : 160}px; height: 12px; margin-top: ${portrait ? 36 : 22}px;
+    background: #6F4BFF; border: 3px solid #14102A; }
+  p { margin-top: ${portrait ? 48 : 24}px; max-width: ${portrait ? "16em" : "34em"};
+    font: 600 ${type}px/1.25 "Instrument Sans", sans-serif; }
   footer { margin-top: auto; display: flex; justify-content: space-between; align-items: baseline;
-    font-size: ${size.height > size.width ? 32 : 26}px; font-weight: 600; }
-  footer b { font: 800 ${size.height > size.width ? 40 : 32}px/1 "Bricolage Grotesque", "Arial Narrow", sans-serif; }
+    font-size: ${portrait ? 32 : 24}px; font-weight: 600; padding-top: 28px; }
+  footer b { font: 800 ${portrait ? 40 : 30}px/1 "Bricolage Grotesque", "Arial Narrow", sans-serif; }
 </style></head><body>
   <div class="pill">${escapeHtml(post.day)} · ${escapeHtml(post.channel)}</div>
-  <h1>${escapeHtml(post.text)}</h1>
+  <h1>${escapeHtml(nicheLabel)}</h1>
+  <div class="rule"></div>
+  <p>${escapeHtml(post.text)}</p>
   <footer><b>${escapeHtml(who.name)}</b><span>${escapeHtml(who.site)}</span></footer>
 </body></html>
 `;
 }
 
-export function checkPack(dir, { posts }) {
+export function checkPack(dir, { posts, niche = "" }) {
   const errors = [];
   for (const post of posts) {
     const stem = fileStem(post);
@@ -97,9 +106,10 @@ export function checkPack(dir, { posts }) {
     const textPath = join(dir, `${stem}.txt`);
     const htmlPath = join(dir, `${stem}.html`);
     const pngPath = join(dir, `${stem}.png`);
-    const label = `${post.day} ${post.channel}`;
+    const label = `${niche ? `${niche} ` : ""}${post.day} ${post.channel}`;
+    const expectedText = post.caption ?? `${post.text}\n`;
     if (!existsSync(textPath)) errors.push(`${label} text is missing.`);
-    else if (readFileSync(textPath, "utf8") !== `${post.text}\n`) errors.push(`${label} text does not match the post.`);
+    else if (readFileSync(textPath, "utf8") !== expectedText) errors.push(`${label} text does not match the post.`);
     if (!existsSync(htmlPath)) errors.push(`${label} card is missing.`);
     else {
       const html = readFileSync(htmlPath, "utf8");

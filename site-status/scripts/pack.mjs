@@ -1,11 +1,17 @@
 #!/usr/bin/env node
-// Write one niche's posts and type cards. Pass --shots to render the PNGs.
+// Write every niche's posts and type cards. Pass --shots to render the PNGs.
 import { mkdir, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { findNiche, nicheForWeek, nichePack } from "./content.mjs";
+import { existsSync, readFileSync } from "node:fs";
+import { findNiche, nicheForWeek, nichePack, niches, tagsFor } from "./content.mjs";
 import { cardHtml, cardSizes, checkPack, fileStem } from "./cards.mjs";
+
+export function caption(post, niche) {
+  if (post.channel !== "Instagram") return `${post.text}\n`;
+  return `${post.text}\n\n${tagsFor(niche).map((tag) => `#${tag}`).join(" ")}\n`;
+}
 
 export function packFor(label, date = new Date()) {
   const niche = label ? findNiche(label) : nicheForWeek(date);
@@ -14,52 +20,90 @@ export function packFor(label, date = new Date()) {
   const files = pack.posts.map((post) => ({
     post,
     stem: fileStem(post),
-    text: `${post.text}\n`,
-    html: cardHtml(post),
+    text: caption(post, niche),
+    html: cardHtml(post, niche.label),
   }));
+  return { niche, pack, files };
+}
+
+export function libraryFor(label, date = new Date()) {
+  const featured = label ? findNiche(label) : nicheForWeek(date);
+  if (!featured) throw new Error(`Pick a niche from the list. ${label || "Nothing"} is not on it.`);
+  const ordered = [featured, ...niches.filter((niche) => niche.slug !== featured.slug)];
+  const selected = label ? [featured] : ordered;
+  const packs = selected.map((niche) => packFor(niche.label, date));
+  const later = packs.filter((pack) => pack.niche.slug !== featured.slug);
   const index = [
-    niche.label,
-    `Week of ${pack.week.label}. Theme: ${pack.week.name}.`,
+    `Week of ${packs[0].pack.week.label}. Theme: ${packs[0].pack.week.name}.`,
+    `Post this niche: ${featured.label}.`,
     "Paste these yourself. This job does not post them.",
+    `${packs.length} ${packs.length === 1 ? "niche" : "niches"}. ${packs.length * 4} pictures.`,
     "LinkedIn and Facebook pictures are 1200×630. Instagram pictures are 1080×1350.",
     "",
-    ...files.map((file) => `${file.post.day} · ${file.post.channel} -> ${file.stem}.txt and ${file.stem}.png`),
+    "This week",
+    `${featured.label} -> ${featured.slug}/`,
+    ...(later.length ? ["", "Later", ...later.map((pack) => `${pack.niche.label} -> ${pack.niche.slug}/`)] : []),
     "",
   ].join("\n");
-  return { niche, pack, files, index: `${index.trim()}\n` };
+  return { featured, packs, index: `${index.trim()}\n` };
+}
+
+export function checkLibrary(dir, library) {
+  const errors = [];
+  const indexPath = join(dir, "index.txt");
+  if (!existsSync(indexPath)) errors.push("The index is missing.");
+  else if (!readFileSync(indexPath, "utf8").includes(`Post this niche: ${library.featured.label}.`)) {
+    errors.push("The index does not name this week's niche.");
+  }
+  for (const pack of library.packs) {
+    try {
+      checkPack(join(dir, pack.niche.slug), {
+        posts: pack.files.map((file) => ({ ...file.post, caption: file.text })),
+        niche: pack.niche.label,
+      });
+    } catch (error) {
+      errors.push(error.message);
+    }
+  }
+  if (errors.length) throw new Error(errors.join("\n"));
 }
 
 export function parseArgs(argv, env = process.env) {
   const shots = argv.includes("--shots");
   const args = argv.filter((arg) => arg !== "--shots");
   const niche = env.NICHE?.trim() || "";
-  if (niche) return { shots, niche, outDir: args[0] || "social-pack" };
-  if (args.length === 0) return { shots, niche: "", outDir: "social-pack" };
-  if (args.length === 1 && findNiche(args[0])) return { shots, niche: args[0], outDir: "social-pack" };
-  if (args.length === 1) return { shots, niche: "", outDir: args[0] };
-  return { shots, niche: args[0], outDir: args[1] };
+  if (niche) return { shots, niche, all: false, outDir: args[0] || "social-pack" };
+  if (args.length === 0) return { shots, niche: "", all: true, outDir: "social-pack" };
+  if (args.length === 1 && findNiche(args[0])) return { shots, niche: args[0], all: false, outDir: "social-pack" };
+  if (args.length === 1) return { shots, niche: "", all: true, outDir: args[0] };
+  return { shots, niche: args[0], all: false, outDir: args[1] };
 }
 
-async function writePack(outDir, pack) {
+async function writeLibrary(outDir, library) {
   await mkdir(outDir, { recursive: true });
-  await writeFile(join(outDir, "index.txt"), pack.index);
-  await writeFile(join(outDir, `${pack.niche.slug}.txt`), pack.pack.text);
-  for (const file of pack.files) {
-    await writeFile(join(outDir, `${file.stem}.txt`), file.text);
-    await writeFile(join(outDir, `${file.stem}.html`), file.html);
+  await writeFile(join(outDir, "index.txt"), library.index);
+  for (const pack of library.packs) {
+    const folder = join(outDir, pack.niche.slug);
+    await mkdir(folder, { recursive: true });
+    await writeFile(join(folder, `${pack.niche.slug}.txt`), pack.pack.text);
+    for (const file of pack.files) {
+      await writeFile(join(folder, `${file.stem}.txt`), file.text);
+      await writeFile(join(folder, `${file.stem}.html`), file.html);
+    }
   }
 }
 
-function renderShots(outDir, pack) {
-  const jobs = pack.files.map((file) => {
+function renderShots(outDir, library) {
+  const jobs = library.packs.flatMap((pack) => pack.files.map((file) => {
     const size = cardSizes[file.post.channel];
+    const folder = join(outDir, pack.niche.slug);
     return {
-      html: resolve(outDir, `${file.stem}.html`),
-      png: resolve(outDir, `${file.stem}.png`),
+      html: resolve(folder, `${file.stem}.html`),
+      png: resolve(folder, `${file.stem}.png`),
       width: size.width,
       height: size.height,
     };
-  });
+  }));
   const runner = `
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
@@ -79,13 +123,13 @@ await browser.close();
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const pack = packFor(args.niche);
-  await writePack(args.outDir, pack);
+  const library = libraryFor(args.niche);
+  await writeLibrary(args.outDir, library);
   if (args.shots) {
-    renderShots(args.outDir, pack);
-    checkPack(args.outDir, { posts: pack.pack.posts });
+    renderShots(args.outDir, library);
+    checkLibrary(args.outDir, library);
   }
-  console.log(pack.index.trim());
+  console.log(library.index.trim());
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

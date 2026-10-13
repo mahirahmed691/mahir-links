@@ -212,6 +212,27 @@ export function nicheForWeek(date = new Date()) {
   return niches[(weekNumber(date) - 1) % niches.length];
 }
 
+const instagramTags = {
+  "home-bakery": ["homebakery", "ukbakery", "cakeorders", "smallbusinessuk"],
+  "coffee-shop": ["coffeeshop", "ukcafe", "morningcoffee", "smallbusinessuk"],
+  restaurant: ["restaurant", "sundaycollection", "preorder", "smallbusinessuk"],
+  "dessert-shop": ["dessertshop", "ukdessert", "familyorder", "smallbusinessuk"],
+  "modest-fashion": ["modestfashion", "newdrop", "ukfashion", "smallbusinessuk"],
+  "car-hire": ["carhire", "weddingcar", "ukhire", "smallbusinessuk"],
+  "holiday-let": ["holidaylet", "ukstay", "shortlet", "smallbusinessuk"],
+  coaching: ["coaching", "discoverycall", "ukcoach", "smallbusinessuk"],
+  salon: ["salon", "fridaybooking", "uksalon", "smallbusinessuk"],
+  takeaway: ["takeaway", "fridaynight", "ukfood", "smallbusinessuk"],
+  florist: ["florist", "samedayflowers", "ukflorist", "smallbusinessuk"],
+  "trade-business": ["uktrades", "plumber", "electrician", "smallbusinessuk"],
+};
+
+export function tagsFor(niche) {
+  const tags = instagramTags[niche.slug];
+  if (!tags) throw new Error(`No Instagram tags for ${niche.label}.`);
+  return tags;
+}
+
 export function nichePack(niche, date = new Date()) {
   const week = weekOf(date);
   const posts = [
