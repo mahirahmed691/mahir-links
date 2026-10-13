@@ -9,16 +9,25 @@ pipeline {
     timeout(time: 60, unit: 'MINUTES')
   }
 
+  triggers {
+    cron("TZ=Europe/London\n0 18 * * *")
+  }
+
   parameters {
     choice(
       name: 'PART',
-      choices: "All\nShop pages\nCollections\nProducts\nJournal\nCheckout",
-      description: 'Which part of the shop to open. All opens every stage. Checkout opens the bag, account, and checkout.'
+      choices: "All\nShop pages\nCollections\nProducts\nJournal\nCheckout\nMock checkout",
+      description: 'Which part of the shop to open. All opens every stage. Checkout opens the bag and runs the mock payment. Mock checkout runs the payment only.'
     )
     choice(
       name: 'ASPECT',
       choices: "Open\nSpeed\nWeight\nPrices",
       description: 'Open fails when a page is down. Speed also fails when a page is slow. Weight fails when a page is heavy. Prices fails when a product has no price.'
+    )
+    booleanParam(
+      name: 'SEND_REPORT',
+      defaultValue: false,
+      description: 'Email the PDF and file the Jira tickets after this run. The 6pm run does this on its own.'
     )
   }
 
@@ -44,7 +53,7 @@ pipeline {
       }
       post {
         always {
-          archiveArtifacts artifacts: 'site-status/smoke-shop-pages.txt,site-status/smoke-shop-pages.html', allowEmptyArchive: true
+          archiveArtifacts artifacts: 'site-status/smoke-shop-pages.txt,site-status/smoke-shop-pages.html,site-status/smoke-shop-pages.json', allowEmptyArchive: true
         }
       }
     }
@@ -62,7 +71,7 @@ pipeline {
       }
       post {
         always {
-          archiveArtifacts artifacts: 'site-status/smoke-collections.txt,site-status/smoke-collections.html', allowEmptyArchive: true
+          archiveArtifacts artifacts: 'site-status/smoke-collections.txt,site-status/smoke-collections.html,site-status/smoke-collections.json', allowEmptyArchive: true
         }
       }
     }
@@ -80,7 +89,7 @@ pipeline {
       }
       post {
         always {
-          archiveArtifacts artifacts: 'site-status/smoke-products.txt,site-status/smoke-products.html', allowEmptyArchive: true
+          archiveArtifacts artifacts: 'site-status/smoke-products.txt,site-status/smoke-products.html,site-status/smoke-products.json', allowEmptyArchive: true
         }
       }
     }
@@ -98,7 +107,7 @@ pipeline {
       }
       post {
         always {
-          archiveArtifacts artifacts: 'site-status/smoke-journal.txt,site-status/smoke-journal.html', allowEmptyArchive: true
+          archiveArtifacts artifacts: 'site-status/smoke-journal.txt,site-status/smoke-journal.html,site-status/smoke-journal.json', allowEmptyArchive: true
         }
       }
     }
@@ -116,7 +125,41 @@ pipeline {
       }
       post {
         always {
-          archiveArtifacts artifacts: 'site-status/smoke-checkout.txt,site-status/smoke-checkout.html', allowEmptyArchive: true
+          archiveArtifacts artifacts: 'site-status/smoke-checkout.txt,site-status/smoke-checkout.html,site-status/smoke-checkout.json', allowEmptyArchive: true
+        }
+      }
+    }
+
+    stage('Mock checkout') {
+      when {
+        expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Mock checkout' || (params.PART ?: 'All') == 'Checkout' }
+      }
+      steps {
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          dir('site-status') {
+            sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-mock-checkout.txt \"Mock checkout\" \"${params.ASPECT}\""
+          }
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'site-status/smoke-mock-checkout.txt,site-status/smoke-mock-checkout.html,site-status/smoke-mock-checkout.json', allowEmptyArchive: true
+        }
+      }
+    }
+
+    stage('Daily report') {
+      when {
+        expression { return currentBuild.getBuildCauses('hudson.triggers.TimerTrigger$TimerTriggerCause').size() > 0 || params.SEND_REPORT == true }
+      }
+      steps {
+        dir('site-status') {
+          sh 'node scripts/daily-report.mjs'
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'site-status/abayas-smoke-report.pdf,site-status/abayas-smoke-tickets.json', allowEmptyArchive: true
         }
       }
     }
@@ -124,7 +167,7 @@ pipeline {
 
   post {
     cleanup {
-      sh 'rm -f site-status/smoke-shop-pages.txt site-status/smoke-shop-pages.html site-status/smoke-collections.txt site-status/smoke-collections.html site-status/smoke-products.txt site-status/smoke-products.html site-status/smoke-journal.txt site-status/smoke-journal.html site-status/smoke-checkout.txt site-status/smoke-checkout.html'
+      sh 'rm -f site-status/smoke-shop-pages.txt site-status/smoke-shop-pages.html site-status/smoke-shop-pages.json site-status/smoke-collections.txt site-status/smoke-collections.html site-status/smoke-collections.json site-status/smoke-products.txt site-status/smoke-products.html site-status/smoke-products.json site-status/smoke-journal.txt site-status/smoke-journal.html site-status/smoke-journal.json site-status/smoke-checkout.txt site-status/smoke-checkout.html site-status/smoke-checkout.json site-status/smoke-mock-checkout.txt site-status/smoke-mock-checkout.html site-status/smoke-mock-checkout.json site-status/abayas-smoke-report.pdf site-status/abayas-smoke-tickets.json'
     }
   }
 }

@@ -9,4 +9,7 @@ site-status/content/
 site-status/content-request.json
 site-status/smoke*.txt
 site-status/smoke*.html
+site-status/smoke*.json
+site-status/abayas-smoke-report.pdf
+site-status/abayas-smoke-tickets.json
 social-pack/

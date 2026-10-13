@@ -145,6 +145,7 @@ export function selectSection(config, name) {
     sitemaps: section.sitemaps || [],
     pages: section.pages || section.extra || [],
     extra: section.extra || [],
+    mockCheckout: section.mockCheckout || null,
   };
 }
 
@@ -493,12 +494,130 @@ export function smokeReport(result) {
   return `${lines.join("\n")}\n`;
 }
 
+function pounds(value) {
+  return `£${Number(value).toFixed(2)}`;
+}
+
+export function runMockCheckout(shop, order = {}) {
+  const steps = [];
+  const stop = (name, reason, fix) => {
+    steps.push({ name, ok: false, detail: reason });
+    return { ok: false, reason, fix, steps, orderId: "", mock: true, paid: false };
+  };
+  const product = String(shop?.product || "").trim();
+  const price = Number(shop?.price);
+  const options = Array.isArray(shop?.options) ? shop.options : [];
+  if (!product || !(price > 0)) throw new Error("Name the dress and its price.");
+  const option = String(order.option || "").trim();
+  if (!option) return stop("Bag", "The bag is empty.", "I'd add a dress before checkout.");
+  const choice = options.find((item) => String(item.value) === option);
+  if (!choice) return stop("Length", `Length ${option} is not sold on ${product}.`, "I'd pick a length the shop sells.");
+  if (!choice.stock) return stop("Add to bag", `${product} in length ${option} is out of stock.`, "I'd pick a length that is in stock.");
+  steps.push({ name: "Add to bag", ok: true, detail: `${product}, length ${option}, ${pounds(price)}` });
+  steps.push({ name: "Bag", ok: true, detail: `1 dress, ${pounds(price)}` });
+  const customer = order.customer || {};
+  const missing = ["name", "email", "address", "city", "postcode"].filter((key) => !String(customer[key] || "").trim());
+  if (missing.length) return stop("Details", `Checkout is missing ${missing.join(", ")}.`, "I'd fill the missing checkout fields.");
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(customer.email).trim())) return stop("Details", "The email address is not usable.", "I'd use an email address.");
+  if (!/^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i.test(String(customer.postcode).trim())) return stop("Details", "The postcode is not a UK postcode.", "I'd use a UK postcode.");
+  steps.push({ name: "Details", ok: true, detail: `${customer.name}, ${customer.postcode}` });
+  const payment = String(order.payment || "");
+  if (payment === "mock-card-declined") return stop("Payment", "The mock card was declined. No order was placed.", "I'd try the other mock card.");
+  if (payment !== "mock-card-ok") return stop("Payment", "No mock card was chosen.", "I'd choose the mock card. No card is sent to the shop.");
+  steps.push({ name: "Payment", ok: true, detail: "Mock card approved. No money moved." });
+  steps.push({ name: "Order", ok: true, detail: "Order AB-1001. The bag is empty." });
+  return { ok: true, reason: "", fix: "", steps, orderId: "AB-1001", mock: true, paid: false, total: price };
+}
+
+export function mockCheckoutSuite(shop, { name = "Shop", url = "" } = {}) {
+  const options = Array.isArray(shop?.options) ? shop.options : [];
+  const inStock = options.find((item) => item.stock);
+  const out = options.find((item) => item.stock === false);
+  if (!inStock || !out) throw new Error("Name an in-stock length and an out-of-stock length.");
+  const customer = {
+    name: "Mock Customer",
+    email: "mock-checkout@example.com",
+    address: "1 Test Street",
+    city: "London",
+    postcode: "E1 1AA",
+  };
+  const cases = [
+    { name: "A good mock card places an order", order: { option: String(inStock.value), customer, payment: "mock-card-ok" }, expectOk: true },
+    { name: "A declined mock card places no order", order: { option: String(inStock.value), customer, payment: "mock-card-declined" }, expectOk: false },
+    { name: "An out of stock length stays out of the bag", order: { option: String(out.value), customer, payment: "mock-card-ok" }, expectOk: false },
+    { name: "An empty bag cannot check out", order: { option: "", customer, payment: "mock-card-ok" }, expectOk: false },
+    { name: "A missing address never reaches payment", order: { option: String(inStock.value), customer: { name: customer.name, email: customer.email }, payment: "mock-card-ok" }, expectOk: false },
+  ];
+  const checks = cases.map((item) => {
+    const result = runMockCheckout(shop, item.order);
+    const behaved = result.ok === item.expectOk && result.paid === false && (item.expectOk ? result.orderId === "AB-1001" : !result.orderId);
+    return { name: item.name, ok: behaved, expectOk: item.expectOk, result };
+  });
+  return { name, url, ok: checks.every((check) => check.ok), checks };
+}
+
+export function mockCheckoutReport(result) {
+  const lines = [
+    `${result.ok ? "✅" : "❌"} ${result.name}`,
+    "💳 Mock checkout. No money moved and no card was sent to the shop.",
+  ];
+  if (result.url) lines.push(`🔗 ${result.url}`);
+  for (const check of result.checks) {
+    lines.push("", `${check.ok ? "✅" : "❌"} ${check.name}`);
+    for (const step of check.result.steps) lines.push(`   ${step.ok ? "✅" : "❌"} ${step.name}  ${step.detail}`);
+    if (check.result.fix) lines.push(`   🔧 ${check.result.fix}`);
+  }
+  const missed = result.checks.filter((check) => !check.ok).length;
+  lines.push(
+    "",
+    result.ok
+      ? `✅ Pass. ${result.checks.length} mock checks. No payment was sent to the shop.`
+      : `❌ Fail. ${missed} mock ${missed === 1 ? "check" : "checks"} did not behave.`,
+  );
+  return `${lines.join("\n")}\n`;
+}
+
+export function mockCheckoutHtml(result) {
+  const rows = result.checks.map((check) => {
+    const steps = check.result.steps.map((step) => `<li>${step.ok ? "✅" : "❌"} ${escapeHtml(step.name)} ${escapeHtml(step.detail)}</li>`).join("");
+    const fix = check.result.fix ? `<p class="note fix">🔧 ${escapeHtml(check.result.fix)}</p>` : "";
+    return `<article class="card ${check.ok ? "pass" : "fail"}"><h2>${check.ok ? "✅" : "❌"} ${escapeHtml(check.name)}</h2><ul>${steps}</ul>${fix}</article>`;
+  }).join("");
+  return `<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(result.name)} mock checkout</title>
+  <style>
+    body { margin: 0; background: #F4F2FF; color: #14102A; font: 16px/1.45 "Instrument Sans", "Segoe UI", sans-serif; }
+    header { background: #14102A; color: #F4F2FF; padding: 36px 8vw 28px; }
+    h1 { margin: 0 0 8px; font: 700 42px/1.05 "Bricolage Grotesque", Georgia, serif; }
+    main { display: grid; gap: 16px; padding: 24px 8vw 48px; }
+    .card { background: white; border-radius: 18px; padding: 18px; border-top: 8px solid #6F4BFF; }
+    .card.pass { border-top-color: #1F8A4C; }
+    .card.fail { border-top-color: #C4384B; }
+    .note.fix { background: #EEE9FF; color: #3D2A99; border-radius: 12px; padding: 10px 12px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>${result.ok ? "✅" : "❌"} ${escapeHtml(result.name)}</h1>
+    <p>💳 Mock checkout. No money moved and no card was sent to the shop.</p>
+  </header>
+  <main>${rows}</main>
+</body>
+</html>
+`;
+}
+
 function partLabel(section) {
   return section.file === "checkout" ? "Checkout" : section.name;
 }
 
 function runsWhen(section) {
-  return ["All", partLabel(section)]
+  const labels = ["All", partLabel(section)];
+  if (section.mockCheckout) labels.push("Checkout");
+  return labels
     .map((label) => `(params.PART ?: 'All') == '${label.replace(/'/g, "\\'")}'`)
     .join(" || ");
 }
@@ -524,11 +643,19 @@ export function jenkinsSmoke(config, configPath = "sites/abayas-boutique/smoke.j
       }
       post {
         always {
-          archiveArtifacts artifacts: 'site-status/smoke-${section.file}.txt,site-status/smoke-${section.file}.html', allowEmptyArchive: true
+          archiveArtifacts artifacts: 'site-status/smoke-${section.file}.txt,site-status/smoke-${section.file}.html,site-status/smoke-${section.file}.json', allowEmptyArchive: true
         }
       }
     }`).join("\n\n");
-  const files = sections.flatMap((section) => [`site-status/smoke-${section.file}.txt`, `site-status/smoke-${section.file}.html`]).join(" ");
+  const files = [
+    ...sections.flatMap((section) => [
+      `site-status/smoke-${section.file}.txt`,
+      `site-status/smoke-${section.file}.html`,
+      `site-status/smoke-${section.file}.json`,
+    ]),
+    "site-status/abayas-smoke-report.pdf",
+    "site-status/abayas-smoke-tickets.json",
+  ].join(" ");
   return `// Smoke test for ${config.name}. Pick a part of the shop and what to judge.
 pipeline {
   agent any
@@ -540,16 +667,25 @@ pipeline {
     timeout(time: 60, unit: 'MINUTES')
   }
 
+  triggers {
+    cron("TZ=Europe/London\\n0 18 * * *")
+  }
+
   parameters {
     choice(
       name: 'PART',
       choices: "${partChoices}",
-      description: 'Which part of the shop to open. All opens every stage. Checkout opens the bag, account, and checkout.'
+      description: 'Which part of the shop to open. All opens every stage. Checkout opens the bag and runs the mock payment. Mock checkout runs the payment only.'
     )
     choice(
       name: 'ASPECT',
       choices: "${aspectChoices}",
       description: 'Open fails when a page is down. Speed also fails when a page is slow. Weight fails when a page is heavy. Prices fails when a product has no price.'
+    )
+    booleanParam(
+      name: 'SEND_REPORT',
+      defaultValue: false,
+      description: 'Email the PDF and file the Jira tickets after this run. The 6pm run does this on its own.'
     )
   }
 
@@ -563,6 +699,22 @@ pipeline {
     }
 
 ${stages}
+
+    stage('Daily report') {
+      when {
+        expression { return currentBuild.getBuildCauses('hudson.triggers.TimerTrigger\$TimerTriggerCause').size() > 0 || params.SEND_REPORT == true }
+      }
+      steps {
+        dir('site-status') {
+          sh 'node scripts/daily-report.mjs'
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'site-status/abayas-smoke-report.pdf,site-status/abayas-smoke-tickets.json', allowEmptyArchive: true
+        }
+      }
+    }
   }
 
   post {
@@ -699,6 +851,61 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
+export function pageRecord(result) {
+  const checks = result.checks || [];
+  return {
+    kind: "pages",
+    name: result.name,
+    url: result.url || "",
+    checkedAt: result.checkedAt || "",
+    aspect: result.aspect || "Open",
+    ok: Boolean(result.ok),
+    heavy: checks.filter((check) => (check.warnings || []).some((warning) => String(warning).startsWith("Heavy"))).length,
+    checks: checks.map((check) => ({
+      name: check.name,
+      url: check.finalUrl || check.url || "",
+      ok: Boolean(check.ok),
+      reason: check.reason || "",
+      fix: check.fix || pageFix(check),
+      warnings: notableNotes(check),
+      ms: check.ms || 0,
+      bytes: check.bytes || 0,
+      kind: check.kind || "page",
+      recovered: Boolean(check.recovered),
+    })),
+  };
+}
+
+export function mockRecord(result) {
+  return {
+    kind: "mock",
+    name: result.name,
+    url: result.url || "",
+    checkedAt: result.checkedAt || "",
+    aspect: "Payment",
+    ok: Boolean(result.ok),
+    heavy: 0,
+    checks: (result.checks || []).map((check) => ({
+      name: check.name,
+      url: "",
+      ok: Boolean(check.ok),
+      reason: check.result?.reason || "",
+      fix: check.result?.fix || "",
+      warnings: [],
+      ms: 0,
+      bytes: 0,
+      kind: "mock",
+    })),
+  };
+}
+
+async function writeOutputs(outPath, report, html, record) {
+  if (!outPath) return;
+  await writeFile(outPath, report);
+  await writeFile(outPath.replace(/\.txt$/, ".html"), html);
+  await writeFile(outPath.replace(/\.txt$/, ".json"), `${JSON.stringify(record, null, 2)}\n`);
+}
+
 async function main() {
   const [configPath, outPath, sectionName, aspectName] = process.argv.slice(2);
   if (!configPath) throw new Error("Pass the shop smoke file.");
@@ -711,6 +918,15 @@ async function main() {
   let failed = false;
   const reports = [];
   for (const config of configs) {
+    if (config.mockCheckout) {
+      const result = mockCheckoutSuite(config.mockCheckout, { name: config.name, url: config.url });
+      const report = mockCheckoutReport(result);
+      reports.push(report);
+      process.stdout.write(report);
+      if (!result.ok) failed = true;
+      await writeOutputs(configs.length === 1 ? outPath : "", report, mockCheckoutHtml(result), mockRecord(result));
+      continue;
+    }
     const result = await smokeShop(config, {
       aspect,
       onPage: (check, done, total) => process.stderr.write(`${config.name} ${done}/${total} ${check.ok ? "ok" : "down"} ${check.name}\n`),
@@ -719,10 +935,7 @@ async function main() {
     reports.push(report);
     process.stdout.write(report);
     if (!result.ok) failed = true;
-    if (outPath && configs.length === 1) {
-      await writeFile(outPath, report);
-      await writeFile(outPath.replace(/\.txt$/, ".html"), smokeHtml(result));
-    }
+    await writeOutputs(configs.length === 1 ? outPath : "", report, smokeHtml(result), pageRecord(result));
   }
   if (failed) process.exitCode = 1;
 }

@@ -33,6 +33,18 @@
         { "name": "Account", "emoji": "👤", "path": "/my-account/", "expect": "My account", "kind": "page" },
         { "name": "Checkout", "emoji": "💳", "path": "/checkout/", "expect": "Abayas Boutique", "kind": "page" }
       ]
+    },
+    {
+      "name": "Mock checkout",
+      "file": "mock-checkout",
+      "mockCheckout": {
+        "product": "Ona in Green",
+        "price": 80,
+        "options": [
+          { "name": "Length", "value": "54", "stock": true },
+          { "name": "Length", "value": "60", "stock": false }
+        ]
+      }
     }
   ]
 }

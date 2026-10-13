@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { describeUrl, discoverPages, jenkinsSmoke, judgeCheck, normalAspect, notableNotes, paceNotes, pageFix, retestFailed, selectSection, shopPages, sitemapLocs, smokeHtml, smokeReport, smokeShop } from "../scripts/smoke-shop.mjs";
+import { describeUrl, discoverPages, jenkinsSmoke, judgeCheck, mockCheckoutReport, mockCheckoutSuite, normalAspect, notableNotes, paceNotes, pageFix, retestFailed, selectSection, shopPages, sitemapLocs, smokeHtml, smokeReport, smokeShop } from "../scripts/smoke-shop.mjs";
 
 const shop = {
   name: "Abayas Boutique",
@@ -41,6 +41,7 @@ test("the Abayas Boutique smoke file checks the customer pages", async () => {
     "Products",
     "Journal",
     "Bag, account, and checkout",
+    "Mock checkout",
   ]);
   const checkout = selectSection(saved, "Bag, account, and checkout");
   assert.equal(checkout.name, "Abayas Boutique · Bag, account, and checkout");
@@ -223,6 +224,26 @@ test("the sitemap walk keeps shop urls and names each kind", async () => {
     "https://abayasboutique.com/about-us/",
     "https://abayasboutique.com/cart/",
   ]);
+});
+
+test("the mock checkout pays with a fake card and never charges the shop", async () => {
+  const saved = JSON.parse(await readFile(new URL("../../sites/abayas-boutique/smoke.json", import.meta.url), "utf8"));
+  const section = selectSection(saved, "Mock checkout");
+  const result = mockCheckoutSuite(section.mockCheckout, { name: section.name, url: section.url });
+  assert.equal(result.ok, true);
+  const paid = result.checks[0].result;
+  assert.equal(paid.orderId, "AB-1001");
+  assert.equal(paid.paid, false);
+  assert.match(paid.steps.at(-1).detail, /bag is empty/);
+  const declined = result.checks[1].result;
+  assert.equal(declined.ok, false);
+  assert.equal(declined.orderId, "");
+  assert.match(declined.reason, /declined/);
+  assert.match(result.checks[2].result.reason, /out of stock/);
+  assert.match(result.checks[3].result.reason, /bag is empty/);
+  assert.match(result.checks[4].result.reason, /missing/);
+  assert.match(mockCheckoutReport(result), /No payment was sent to the shop/);
+  assert.match(jenkinsSmoke(saved), /Mock checkout/);
 });
 
 test("a page on another site is refused", () => {
