@@ -170,6 +170,14 @@ test("the sitemap walk keeps shop urls and names each kind", async () => {
     "https://abayasboutique.com/cart/",
     "https://abayasboutique.com/about-us/",
   ]);
+  const sitemapOnly = await discoverPages(
+    { url: "https://abayasboutique.com", sitemaps: ["https://abayasboutique.com/page-sitemap.xml"] },
+    fetchImpl,
+  );
+  assert.deepEqual(sitemapOnly.map((page) => page.url), [
+    "https://abayasboutique.com/about-us/",
+    "https://abayasboutique.com/cart/",
+  ]);
 });
 
 test("a page on another site is refused", () => {

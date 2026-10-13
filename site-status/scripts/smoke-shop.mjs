@@ -88,7 +88,8 @@ function pageKey(value) {
 
 export async function discoverPages(config, fetchImpl) {
   const origin = new URL(publicHttpsUrl(config?.url));
-  const extras = shopPages({ url: origin, pages: config?.extra || [] });
+  const extraPages = Array.isArray(config?.extra) ? config.extra : [];
+  const extras = extraPages.length ? shopPages({ url: origin, pages: extraPages }) : [];
   const found = [];
   for (const sitemap of config?.sitemaps || []) {
     const safe = publicHttpsUrl(sitemap);
