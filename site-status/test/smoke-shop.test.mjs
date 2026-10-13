@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { shopPages, smokeReport, smokeShop } from "../scripts/smoke-shop.mjs";
+import { paceNotes, shopPages, smokeHtml, smokeReport, smokeShop } from "../scripts/smoke-shop.mjs";
 
 const shop = {
   name: "Abayas Boutique",
   url: "https://abayasboutique.com",
   pages: [
-    { name: "Home", path: "/", expect: "Abayas Boutique" },
-    { name: "Abayas", path: "/collections/abayas/", expect: "Abayas Boutique" },
-    { name: "Bag", path: "/cart/", expect: "Abayas Boutique" },
-    { name: "Account", path: "/my-account/", expect: "My account" },
+    { name: "Home", emoji: "🏠", path: "/", expect: "Abayas Boutique" },
+    { name: "Abayas", emoji: "👗", path: "/collections/abayas/", expect: "Abayas Boutique" },
+    { name: "Bag", emoji: "🛍️", path: "/cart/", expect: "Abayas Boutique" },
+    { name: "Account", emoji: "👤", path: "/my-account/", expect: "My account" },
   ],
 };
 
@@ -38,8 +38,13 @@ test("the Abayas Boutique smoke file checks the customer pages", async () => {
   assert.deepEqual(shopPages(saved).map((page) => page.url), [
     "https://abayasboutique.com/",
     "https://abayasboutique.com/collections/abayas/",
+    "https://abayasboutique.com/collections/new-arrivals/",
+    "https://abayasboutique.com/collections/bestsellers/",
+    "https://abayasboutique.com/collections/hijabs/",
     "https://abayasboutique.com/cart/",
     "https://abayasboutique.com/my-account/",
+    "https://abayasboutique.com/privacy-policy/",
+    "https://abayasboutique.com/return-exchange/",
   ]);
   const jenkins = await readFile(new URL("../../sites/abayas-boutique/Jenkinsfile.smoke", import.meta.url), "utf8");
   assert.match(jenkins, /smoke-shop\.mjs/);
@@ -50,8 +55,11 @@ test("a shop that answers on every page passes", async () => {
   const result = await smokeShop(shop, { fetchImpl: fakeFetch() });
   assert.equal(result.ok, true);
   assert.equal(result.checks.length, 4);
-  assert.match(smokeReport(result), /PASS {2}Home/);
-  assert.match(smokeReport(result), /Pass\./);
+  const report = smokeReport(result);
+  assert.match(report, /✅ 🏠 Home/);
+  assert.match(report, /✅ Pass\. 4 pages open\./);
+  assert.match(smokeHtml(result), /Abayas Boutique smoke/);
+  assert.match(smokeHtml(result), /#1F8A4C/);
 });
 
 test("a broken collection fails the smoke test", async () => {
@@ -62,7 +70,8 @@ test("a broken collection fails the smoke test", async () => {
   });
   assert.equal(result.ok, false);
   assert.equal(result.checks.find((check) => check.name === "Abayas").reason, "status 500");
-  assert.match(smokeReport(result), /Fail\./);
+  assert.match(smokeReport(result), /❌ Fail\. 1 page down\./);
+  assert.match(smokeHtml(result), /#C4384B/);
 });
 
 test("a page that leaves the shop fails", async () => {
@@ -91,6 +100,21 @@ test("a page that is not html fails", async () => {
     }),
   });
   assert.equal(result.checks.find((check) => check.name === "Home").reason, "the page was not html");
+});
+
+test("a slow heavy page stays open and is flagged", () => {
+  const notes = paceNotes(2700, 1400000);
+  assert.match(notes[0], /Slow/);
+  assert.match(notes[1], /Heavy page/);
+});
+
+test("a shop page with no products fails when products are required", async () => {
+  const result = await smokeShop(
+    { ...shop, pages: [{ name: "Abayas", emoji: "👗", path: "/collections/abayas/", expect: "Abayas Boutique", minProducts: 1 }] },
+    { fetchImpl: fakeFetch() },
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.checks[0].reason, /only 0 products/);
 });
 
 test("a page on another site is refused", () => {

@@ -21,10 +21,10 @@ pipeline {
 
   post {
     success {
-      archiveArtifacts artifacts: 'site-status/smoke.txt', onlyIfSuccessful: true
+      archiveArtifacts artifacts: 'site-status/smoke.txt,site-status/smoke.html', onlyIfSuccessful: true
     }
     cleanup {
-      sh 'rm -f site-status/smoke.txt'
+      sh 'rm -f site-status/smoke.txt site-status/smoke.html'
     }
   }
 }
