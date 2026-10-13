@@ -1,4 +1,4 @@
-// Smoke test for Abayas Boutique. Fails when a customer page is down.
+// Smoke test for Abayas Boutique. Pick a part of the shop and what to judge.
 pipeline {
   agent any
 
@@ -6,25 +6,125 @@ pipeline {
     timestamps()
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '20'))
+    timeout(time: 60, unit: 'MINUTES')
+  }
+
+  parameters {
+    choice(
+      name: 'PART',
+      choices: "All\nShop pages\nCollections\nProducts\nJournal\nCheckout",
+      description: 'Which part of the shop to open. All opens every stage. Checkout opens the bag, account, and checkout.'
+    )
+    choice(
+      name: 'ASPECT',
+      choices: "Open\nSpeed\nWeight\nPrices",
+      description: 'Open fails when a page is down. Speed also fails when a page is slow. Weight fails when a page is heavy. Prices fails when a product has no price.'
+    )
   }
 
   stages {
-    stage('Smoke test the shop') {
+    stage('Prepare') {
       steps {
         dir('site-status') {
           sh 'node --version'
-          sh 'node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke.txt'
+        }
+      }
+    }
+
+    stage('Shop pages') {
+      when {
+        expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Shop pages' }
+      }
+      steps {
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          dir('site-status') {
+            sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-shop-pages.txt \"Shop pages\" \"${params.ASPECT}\""
+          }
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'site-status/smoke-shop-pages.txt,site-status/smoke-shop-pages.html', allowEmptyArchive: true
+        }
+      }
+    }
+
+    stage('Collections') {
+      when {
+        expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Collections' }
+      }
+      steps {
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          dir('site-status') {
+            sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-collections.txt \"Collections\" \"${params.ASPECT}\""
+          }
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'site-status/smoke-collections.txt,site-status/smoke-collections.html', allowEmptyArchive: true
+        }
+      }
+    }
+
+    stage('Products') {
+      when {
+        expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Products' }
+      }
+      steps {
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          dir('site-status') {
+            sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-products.txt \"Products\" \"${params.ASPECT}\""
+          }
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'site-status/smoke-products.txt,site-status/smoke-products.html', allowEmptyArchive: true
+        }
+      }
+    }
+
+    stage('Journal') {
+      when {
+        expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Journal' }
+      }
+      steps {
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          dir('site-status') {
+            sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-journal.txt \"Journal\" \"${params.ASPECT}\""
+          }
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'site-status/smoke-journal.txt,site-status/smoke-journal.html', allowEmptyArchive: true
+        }
+      }
+    }
+
+    stage('Bag, account, and checkout') {
+      when {
+        expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Checkout' }
+      }
+      steps {
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          dir('site-status') {
+            sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-checkout.txt \"Bag, account, and checkout\" \"${params.ASPECT}\""
+          }
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'site-status/smoke-checkout.txt,site-status/smoke-checkout.html', allowEmptyArchive: true
         }
       }
     }
   }
 
   post {
-    success {
-      archiveArtifacts artifacts: 'site-status/smoke.txt', onlyIfSuccessful: true
-    }
     cleanup {
-      sh 'rm -f site-status/smoke.txt'
+      sh 'rm -f site-status/smoke-shop-pages.txt site-status/smoke-shop-pages.html site-status/smoke-collections.txt site-status/smoke-collections.html site-status/smoke-products.txt site-status/smoke-products.html site-status/smoke-journal.txt site-status/smoke-journal.html site-status/smoke-checkout.txt site-status/smoke-checkout.html'
     }
   }
 }
