@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { describeUrl, discoverPages, paceNotes, shopPages, sitemapLocs, smokeHtml, smokeReport, smokeShop } from "../scripts/smoke-shop.mjs";
+import { describeUrl, discoverPages, paceNotes, selectSection, shopPages, sitemapLocs, smokeHtml, smokeReport, smokeShop } from "../scripts/smoke-shop.mjs";
 
 const shop = {
   name: "Abayas Boutique",
@@ -35,21 +35,28 @@ function fakeFetch(overrides = {}) {
 test("the Abayas Boutique smoke file checks the customer pages", async () => {
   const saved = JSON.parse(await readFile(new URL("../../sites/abayas-boutique/smoke.json", import.meta.url), "utf8"));
   assert.equal(saved.url, "https://abayasboutique.com");
-  assert.deepEqual(saved.sitemaps, [
-    "https://abayasboutique.com/page-sitemap.xml",
-    "https://abayasboutique.com/product_cat-sitemap.xml",
-    "https://abayasboutique.com/product-sitemap.xml",
-    "https://abayasboutique.com/post-sitemap.xml",
-    "https://abayasboutique.com/category-sitemap.xml",
+  assert.deepEqual(saved.sections.map((section) => section.name), [
+    "Shop pages",
+    "Collections",
+    "Products",
+    "Journal",
+    "Bag, account, and checkout",
   ]);
-  assert.deepEqual(shopPages({ url: saved.url, pages: saved.extra }).map((page) => page.url), [
+  const checkout = selectSection(saved, "Bag, account, and checkout");
+  assert.equal(checkout.name, "Abayas Boutique · Bag, account, and checkout");
+  assert.deepEqual(shopPages(checkout).map((page) => page.url), [
     "https://abayasboutique.com/cart/",
     "https://abayasboutique.com/my-account/",
     "https://abayasboutique.com/checkout/",
   ]);
+  assert.deepEqual(selectSection(saved, "Journal").sitemaps, [
+    "https://abayasboutique.com/post-sitemap.xml",
+    "https://abayasboutique.com/category-sitemap.xml",
+  ]);
   const jenkins = await readFile(new URL("../../sites/abayas-boutique/Jenkinsfile.smoke", import.meta.url), "utf8");
-  assert.match(jenkins, /smoke-shop\.mjs/);
-  assert.match(jenkins, /abayas-boutique\/smoke\.json/);
+  for (const name of saved.sections.map((section) => section.name)) {
+    assert.match(jenkins, new RegExp(`stage\\('${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'\\)`));
+  }
 });
 
 test("a shop that answers on every page passes", async () => {

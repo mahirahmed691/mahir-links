@@ -103,6 +103,22 @@ export async function discoverPages(config, fetchImpl) {
   return pages;
 }
 
+export function selectSection(config, name) {
+  const sections = Array.isArray(config?.sections) ? config.sections : [];
+  const section = sections.find((item) => item.name === name);
+  if (!section) {
+    const names = sections.map((item) => item.name).join(", ");
+    throw new Error(names ? `No smoke stage named ${name}. Stages: ${names}.` : "This smoke file has no stages.");
+  }
+  return {
+    name: `${String(config.name || "Shop").trim()} · ${section.name}`,
+    url: config.url,
+    sitemaps: section.sitemaps || [],
+    pages: section.pages || section.extra || [],
+    extra: section.extra || [],
+  };
+}
+
 export function paceNotes(ms, bytes) {
   const notes = [];
   if (ms >= SLOW_MS) notes.push(`Slow. ${seconds(ms)}. A customer is waiting.`);
@@ -459,20 +475,29 @@ function escapeHtml(value) {
 }
 
 async function main() {
-  const configPath = process.argv[2];
+  const [configPath, outPath, sectionName] = process.argv.slice(2);
   if (!configPath) throw new Error("Pass the shop smoke file.");
-  const config = JSON.parse(await readFile(configPath, "utf8"));
-  const result = await smokeShop(config, {
-    onPage: (check, done, total) => process.stderr.write(`${done}/${total} ${check.ok ? "ok" : "down"} ${check.name}\n`),
-  });
-  const report = smokeReport(result);
-  const outPath = process.argv[3];
-  if (outPath) {
-    await writeFile(outPath, report);
-    await writeFile(outPath.replace(/\.txt$/, ".html"), smokeHtml(result));
+  const saved = JSON.parse(await readFile(configPath, "utf8"));
+  const runs = sectionName
+    ? [selectSection(saved, sectionName)]
+    : (saved.sections || []).map((section) => selectSection(saved, section.name));
+  const configs = runs.length ? runs : [saved];
+  let failed = false;
+  const reports = [];
+  for (const config of configs) {
+    const result = await smokeShop(config, {
+      onPage: (check, done, total) => process.stderr.write(`${config.name} ${done}/${total} ${check.ok ? "ok" : "down"} ${check.name}\n`),
+    });
+    const report = smokeReport(result);
+    reports.push(report);
+    process.stdout.write(report);
+    if (!result.ok) failed = true;
+    if (outPath && configs.length === 1) {
+      await writeFile(outPath, report);
+      await writeFile(outPath.replace(/\.txt$/, ".html"), smokeHtml(result));
+    }
   }
-  process.stdout.write(report);
-  if (!result.ok) process.exitCode = 1;
+  if (failed) process.exitCode = 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

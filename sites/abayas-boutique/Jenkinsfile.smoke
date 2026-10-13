@@ -1,4 +1,4 @@
-// Smoke test for Abayas Boutique. Fails when a customer page is down.
+// Smoke test for Abayas Boutique. Each stage opens one part of the shop.
 pipeline {
   agent any
 
@@ -10,22 +10,76 @@ pipeline {
   }
 
   stages {
-    stage('Smoke test the shop') {
+    stage('Shop pages') {
       steps {
         dir('site-status') {
           sh 'node --version'
-          sh 'node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke.txt'
+          sh 'node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-shop-pages.txt "Shop pages"'
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'site-status/smoke-shop-pages.txt,site-status/smoke-shop-pages.html', allowEmptyArchive: true
+        }
+      }
+    }
+
+    stage('Collections') {
+      steps {
+        dir('site-status') {
+          sh 'node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-collections.txt "Collections"'
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'site-status/smoke-collections.txt,site-status/smoke-collections.html', allowEmptyArchive: true
+        }
+      }
+    }
+
+    stage('Products') {
+      steps {
+        dir('site-status') {
+          sh 'node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-products.txt "Products"'
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'site-status/smoke-products.txt,site-status/smoke-products.html', allowEmptyArchive: true
+        }
+      }
+    }
+
+    stage('Journal') {
+      steps {
+        dir('site-status') {
+          sh 'node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-journal.txt "Journal"'
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'site-status/smoke-journal.txt,site-status/smoke-journal.html', allowEmptyArchive: true
+        }
+      }
+    }
+
+    stage('Bag, account, and checkout') {
+      steps {
+        dir('site-status') {
+          sh 'node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-checkout.txt "Bag, account, and checkout"'
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'site-status/smoke-checkout.txt,site-status/smoke-checkout.html', allowEmptyArchive: true
         }
       }
     }
   }
 
   post {
-    success {
-      archiveArtifacts artifacts: 'site-status/smoke.txt,site-status/smoke.html', onlyIfSuccessful: true
-    }
     cleanup {
-      sh 'rm -f site-status/smoke.txt site-status/smoke.html'
+      sh 'rm -f site-status/smoke-shop-pages.txt site-status/smoke-shop-pages.html site-status/smoke-collections.txt site-status/smoke-collections.html site-status/smoke-products.txt site-status/smoke-products.html site-status/smoke-journal.txt site-status/smoke-journal.html site-status/smoke-checkout.txt site-status/smoke-checkout.html'
     }
   }
 }

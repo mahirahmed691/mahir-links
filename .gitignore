@@ -7,6 +7,6 @@ site-status/pitch.txt
 site-status/pitch-request.json
 site-status/content/
 site-status/content-request.json
-site-status/smoke.txt
-site-status/smoke.html
+site-status/smoke*.txt
+site-status/smoke*.html
 social-pack/

@@ -1,16 +1,33 @@
 {
   "name": "Abayas Boutique",
   "url": "https://abayasboutique.com",
-  "sitemaps": [
-    "https://abayasboutique.com/page-sitemap.xml",
-    "https://abayasboutique.com/product_cat-sitemap.xml",
-    "https://abayasboutique.com/product-sitemap.xml",
-    "https://abayasboutique.com/post-sitemap.xml",
-    "https://abayasboutique.com/category-sitemap.xml"
-  ],
-  "extra": [
-    { "name": "Bag", "emoji": "🛍️", "path": "/cart/", "expect": "Bag", "kind": "page" },
-    { "name": "Account", "emoji": "👤", "path": "/my-account/", "expect": "My account", "kind": "page" },
-    { "name": "Checkout", "emoji": "💳", "path": "/checkout/", "expect": "Abayas Boutique", "kind": "page" }
+  "sections": [
+    {
+      "name": "Shop pages",
+      "sitemaps": ["https://abayasboutique.com/page-sitemap.xml"]
+    },
+    {
+      "name": "Collections",
+      "sitemaps": ["https://abayasboutique.com/product_cat-sitemap.xml"]
+    },
+    {
+      "name": "Products",
+      "sitemaps": ["https://abayasboutique.com/product-sitemap.xml"]
+    },
+    {
+      "name": "Journal",
+      "sitemaps": [
+        "https://abayasboutique.com/post-sitemap.xml",
+        "https://abayasboutique.com/category-sitemap.xml"
+      ]
+    },
+    {
+      "name": "Bag, account, and checkout",
+      "extra": [
+        { "name": "Bag", "emoji": "🛍️", "path": "/cart/", "expect": "Bag", "kind": "page" },
+        { "name": "Account", "emoji": "👤", "path": "/my-account/", "expect": "My account", "kind": "page" },
+        { "name": "Checkout", "emoji": "💳", "path": "/checkout/", "expect": "Abayas Boutique", "kind": "page" }
+      ]
+    }
   ]
 }
