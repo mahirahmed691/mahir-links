@@ -4,18 +4,22 @@
   "sections": [
     {
       "name": "Shop pages",
+      "file": "shop-pages",
       "sitemaps": ["https://abayasboutique.com/page-sitemap.xml"]
     },
     {
       "name": "Collections",
+      "file": "collections",
       "sitemaps": ["https://abayasboutique.com/product_cat-sitemap.xml"]
     },
     {
       "name": "Products",
+      "file": "products",
       "sitemaps": ["https://abayasboutique.com/product-sitemap.xml"]
     },
     {
       "name": "Journal",
+      "file": "journal",
       "sitemaps": [
         "https://abayasboutique.com/post-sitemap.xml",
         "https://abayasboutique.com/category-sitemap.xml"
@@ -23,6 +27,7 @@
     },
     {
       "name": "Bag, account, and checkout",
+      "file": "checkout",
       "extra": [
         { "name": "Bag", "emoji": "🛍️", "path": "/cart/", "expect": "Bag", "kind": "page" },
         { "name": "Account", "emoji": "👤", "path": "/my-account/", "expect": "My account", "kind": "page" },

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { describeUrl, discoverPages, paceNotes, selectSection, shopPages, sitemapLocs, smokeHtml, smokeReport, smokeShop } from "../scripts/smoke-shop.mjs";
+import { describeUrl, discoverPages, jenkinsSmoke, notableNotes, paceNotes, selectSection, shopPages, sitemapLocs, smokeHtml, smokeReport, smokeShop } from "../scripts/smoke-shop.mjs";
 
 const shop = {
   name: "Abayas Boutique",
@@ -54,9 +54,7 @@ test("the Abayas Boutique smoke file checks the customer pages", async () => {
     "https://abayasboutique.com/category-sitemap.xml",
   ]);
   const jenkins = await readFile(new URL("../../sites/abayas-boutique/Jenkinsfile.smoke", import.meta.url), "utf8");
-  for (const name of saved.sections.map((section) => section.name)) {
-    assert.match(jenkins, new RegExp(`stage\\('${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'\\)`));
-  }
+  assert.equal(jenkins, jenkinsSmoke(saved));
 });
 
 test("a shop that answers on every page passes", async () => {
@@ -108,6 +106,19 @@ test("a page that is not html fails", async () => {
     }),
   });
   assert.equal(result.checks.find((check) => check.name === "Home").reason, "the page was not html");
+});
+
+test("a heavy page stays in the open list and a slow page needs a look", () => {
+  const heavy = { name: "About", emoji: "📄", kind: "page", ok: true, finalUrl: "https://abayasboutique.com/about-us/", status: 200, ms: 1000, bytes: 1400000, warnings: ["Heavy page. 1.4 MB."], title: "About" };
+  const slow = { name: "Home", emoji: "🏠", kind: "page", ok: true, finalUrl: "https://abayasboutique.com/", status: 200, ms: 2700, bytes: 1400000, warnings: ["Slow. 2.7s. A customer is waiting.", "Heavy page. 1.4 MB."], title: "Home" };
+  const result = { name: "Abayas Boutique · Shop pages", url: "https://abayasboutique.com/", checkedAt: "Tuesday", ok: true, checks: [slow, heavy] };
+  const report = smokeReport(result);
+  assert.deepEqual(notableNotes(heavy), []);
+  assert.match(report, /Needs a look[\s\S]*Home/);
+  assert.doesNotMatch(report.split("Every page")[0], /About/);
+  assert.match(report, /All 2 pages are heavy/);
+  assert.match(smokeHtml(result), /Needs a look · 1/);
+  assert.match(smokeHtml(result), /Open · 1/);
 });
 
 test("a slow heavy page stays open and is flagged", () => {

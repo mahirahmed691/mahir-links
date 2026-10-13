@@ -328,41 +328,91 @@ function londonClock(date) {
   }).format(date);
 }
 
+export function notableNotes(check) {
+  return (check.warnings || []).filter((warning) => !warning.startsWith("Heavy page"));
+}
+
 export function smokeReport(result) {
   const summary = summarise(result);
+  const down = result.checks.filter((check) => !check.ok);
+  const look = result.checks.filter((check) => check.ok && notableNotes(check).length);
+  const heavy = result.checks.filter((check) => (check.warnings || []).some((warning) => warning.startsWith("Heavy page"))).length;
   const lines = [
-    `${result.ok ? "✅" : "❌"} ${result.name} smoke`,
+    `${result.ok ? "✅" : "❌"} ${result.name}`,
     `🕘 ${result.checkedAt}`,
     `🔗 ${result.url}`,
     `📚 ${Object.entries(summary.kinds).map(([kind, count]) => `${count} ${kind}`).join("   ")}`,
   ];
   if (summary.slowest) lines.push(`🐢 Slowest  ${summary.slowest.emoji} ${summary.slowest.name}  ${seconds(summary.slowest.ms)}`);
   if (summary.heaviest) lines.push(`📦 Heaviest  ${summary.heaviest.emoji} ${summary.heaviest.name}  ${size(summary.heaviest.bytes)}`);
-  lines.push("");
-  for (const check of result.checks) {
-    lines.push(`${check.ok ? "✅" : "❌"} ${check.emoji} ${check.name}  ·  ${check.kind}`);
-    lines.push(`   🔗 ${check.finalUrl}`);
-    lines.push(`   🔒 HTTPS  ${hostOf(check.finalUrl)}`);
-    lines.push(`   📡 ${check.status ?? "down"}  ${check.type || "no type"}`);
-    if (check.title) lines.push(`   🏷️ ${check.title}`);
-    if (check.h1) lines.push(`   📰 ${check.h1}`);
-    if (check.description) lines.push(`   📝 ${check.description}`);
-    if (check.canonical) lines.push(`   🎯 ${check.canonical}`);
-    lines.push(`   👗 ${label(check.products, "product", "products")}   💷 ${label(check.prices, "price", "prices")}   🖼️ ${label(check.images, "image", "images")}`);
-    lines.push(`   🔤 ${label(check.words, "word", "words")}   🔗 ${label(check.links, "link", "links")}   📋 ${label(check.forms, "form", "forms")}`);
-    lines.push(`   ⏱️ ${seconds(check.ms)}   📦 ${size(check.bytes)}`);
-    for (const warning of check.warnings) lines.push(`   ⚠️ ${warning}`);
-    if (!check.ok) lines.push(`   ❌ ${check.reason}`);
-    lines.push("");
+  if (heavy && heavy === result.checks.length) lines.push(`📦 All ${result.checks.length} pages are heavy.`);
+  else if (heavy) lines.push(`📦 ${heavy} heavy pages.`);
+  if (down.length || look.length) {
+    lines.push("", "Needs a look");
+    for (const check of [...down, ...look]) {
+      lines.push(`${check.ok ? "⚠️" : "❌"} ${check.emoji} ${check.name}  ${check.finalUrl}`);
+      if (!check.ok) lines.push(`   ❌ ${check.reason}`);
+      for (const warning of notableNotes(check)) lines.push(`   ⚠️ ${warning}`);
+    }
   }
-  const warnings = result.checks.reduce((sum, check) => sum + check.warnings.length, 0);
-  const down = result.checks.filter((check) => !check.ok).length;
+  lines.push("", "Every page");
+  for (const check of result.checks) {
+    const title = check.title ? `  ${check.title}` : "";
+    lines.push(`${check.ok ? "✅" : "❌"} ${check.emoji} ${check.name}  ${check.status ?? "down"}  ${seconds(check.ms)}  ${size(check.bytes)}${title}`);
+  }
   lines.push(
+    "",
     result.ok
-      ? `✅ Pass. ${result.checks.length} pages open.${warnings ? ` ⚠️ ${warnings} warnings.` : ""}`
-      : `❌ Fail. ${down} ${down === 1 ? "page" : "pages"} down.`,
+      ? `✅ Pass. ${result.checks.length} pages open.${look.length ? ` ⚠️ ${look.length} need a look.` : ""}`
+      : `❌ Fail. ${down.length} ${down.length === 1 ? "page" : "pages"} down.`,
   );
   return `${lines.join("\n")}\n`;
+}
+
+export function jenkinsSmoke(config, configPath = "sites/abayas-boutique/smoke.json") {
+  const sections = Array.isArray(config?.sections) ? config.sections : [];
+  if (!sections.length) throw new Error("Name the smoke stages.");
+  for (const section of sections) {
+    if (!/^[a-z0-9-]+$/.test(section.file || "")) throw new Error(`${section.name} needs a short file name.`);
+  }
+  const stages = sections.map((section, index) => {
+    const version = index === 0 ? "          sh 'node --version'\n" : "";
+    return `    stage('${section.name}') {
+      steps {
+        dir('site-status') {
+${version}          sh 'node scripts/smoke-shop.mjs ../${configPath} smoke-${section.file}.txt "${section.name}"'
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'site-status/smoke-${section.file}.txt,site-status/smoke-${section.file}.html', allowEmptyArchive: true
+        }
+      }
+    }`;
+  }).join("\n\n");
+  const files = sections.flatMap((section) => [`site-status/smoke-${section.file}.txt`, `site-status/smoke-${section.file}.html`]).join(" ");
+  return `// Smoke test for ${config.name}. Each stage opens one part of the shop.
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    timeout(time: 60, unit: 'MINUTES')
+  }
+
+  stages {
+${stages}
+  }
+
+  post {
+    cleanup {
+      sh 'rm -f ${files}'
+    }
+  }
+}
+`;
 }
 
 function summarise(result) {
@@ -385,7 +435,7 @@ export function smokeHtml(result) {
   const warnings = result.checks.reduce((sum, check) => sum + check.warnings.length, 0);
   const down = result.checks.filter((check) => !check.ok).length;
   const summary = summarise(result);
-  const cards = result.checks.map((check) => {
+  const cardsFor = (list) => list.map((check) => {
     const tone = check.ok ? (check.warnings.length ? "warn" : "pass") : "fail";
     const facts = [
       ["🔗", "Address", check.finalUrl],
@@ -414,6 +464,13 @@ export function smokeHtml(result) {
       ${notes}
     </article>`;
   }).join("");
+  const downCards = result.checks.filter((check) => !check.ok);
+  const lookCards = result.checks.filter((check) => check.ok && notableNotes(check).length);
+  const openCards = result.checks.filter((check) => check.ok && !notableNotes(check).length);
+  const group = (title, list, open) => list.length
+    ? `<details ${open ? "open" : ""}><summary>${escapeHtml(title)} · ${list.length}</summary><div class="stack">${cardsFor(list)}</div></details>`
+    : "";
+  const cards = `${group("❌ Down", downCards, true)}${group("⚠️ Needs a look", lookCards, true)}${group("✅ Open", openCards, false)}`;
   const banner = result.ok ? "✅ Pass" : "❌ Fail";
   return `<!DOCTYPE html>
 <html lang="en-GB">
@@ -430,7 +487,10 @@ export function smokeHtml(result) {
     .banner { display: inline-block; margin-top: 14px; background: ${result.ok ? "#1F8A4C" : "#C4384B"}; color: white; border-radius: 999px; padding: 8px 16px; font-weight: 700; }
     .chips { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
     .chip { background: #FFD23F; color: #14102A; border-radius: 999px; padding: 6px 12px; font-weight: 700; }
-    main { display: grid; gap: 16px; padding: 24px 8vw 48px; }
+    main { display: grid; gap: 18px; padding: 24px 8vw 48px; }
+    details { background: transparent; }
+    summary { cursor: pointer; font: 700 22px/1.2 "Bricolage Grotesque", Georgia, serif; margin: 8px 0 12px; }
+    .stack { display: grid; gap: 16px; }
     .card { background: white; border-radius: 18px; padding: 18px 18px 8px; border-top: 8px solid #6F4BFF; }
     .card.pass { border-top-color: #1F8A4C; }
     .card.warn { border-top-color: #E3A008; }
