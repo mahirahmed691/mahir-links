@@ -10,20 +10,22 @@ pipeline {
   }
 
   parameters {
-    string(name: 'SITE_NAME', description: 'Name to use in the note, for example Tara\'s Bakes')
-    string(name: 'SITE_URL', description: 'Public https address of the shop')
+    choice(
+      name: 'SHOP',
+      choices: "Mahir Ahmed\nFlickFinder\nSakinah\nMotiv\nKARV'D\nKiano London\nSweet Dezire\nBlanco Coffee House\nRAPIDER\nD Apartment Sylhet\nAbayas Boutique\nTara's Bakes",
+      description: 'Shop to check. The address comes from the site list.'
+    )
   }
 
   stages {
     stage('Write the LinkedIn note') {
       steps {
         script {
-          def name = params.SITE_NAME?.trim()
-          def url = params.SITE_URL?.trim()
-          if (!name || !url) {
-            error 'Set SITE_NAME and SITE_URL, then run the job again.'
+          def shop = params.SHOP?.trim()
+          if (!shop) {
+            error 'Pick a shop from the list, then run the job again.'
           }
-          writeFile file: 'site-status/pitch-request.json', text: groovy.json.JsonOutput.toJson([name: name, url: url])
+          writeFile file: 'site-status/pitch-request.json', text: groovy.json.JsonOutput.toJson([name: shop])
         }
         dir('site-status') {
           sh 'node --version'

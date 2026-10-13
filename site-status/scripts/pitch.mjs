@@ -55,12 +55,20 @@ export async function pitchSite({ name, url, probe = probeSite, cert = certifica
   return linkedinNote({ url: safeUrl, spoken });
 }
 
+export function urlForShop(sites, shop) {
+  const name = String(shop || "").trim();
+  const match = (sites?.sites || []).find((site) => site.name === name);
+  if (!match?.url) throw new Error(`No address is listed for ${name}.`);
+  return match.url;
+}
+
 async function requestFromArgs(argv) {
   const [first, second] = argv.slice(2);
   if (!first) throw new Error("Pass a shop name and an https URL, or a JSON file with name and url.");
   if (first.endsWith(".json")) {
     const body = JSON.parse(await readFile(first, "utf8"));
-    return { name: body.name, url: body.url, outPath: second || "pitch.txt" };
+    const url = body.url || urlForShop(JSON.parse(await readFile(new URL("../sites.json", import.meta.url), "utf8")), body.name);
+    return { name: body.name, url, outPath: second || "pitch.txt" };
   }
   return { name: first, url: second, outPath: "pitch.txt" };
 }
