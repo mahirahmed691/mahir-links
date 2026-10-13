@@ -6,6 +6,34 @@ import { publicHttpsUrl } from "./pitch.mjs";
 
 export const SLOW_MS = 2500;
 export const HEAVY_BYTES = 500 * 1024;
+export const SMOKE_ASPECTS = ["Open", "Speed", "Weight", "Prices"];
+
+export function normalAspect(value) {
+  const aspect = String(value || "Open").trim() || "Open";
+  if (!SMOKE_ASPECTS.includes(aspect)) throw new Error(`The aspect must be one of ${SMOKE_ASPECTS.join(", ")}.`);
+  return aspect;
+}
+
+export function judgeCheck(check, aspect = "Open") {
+  const mode = normalAspect(aspect);
+  if (!check.ok || mode === "Open") return check;
+  const take = (prefix) => (check.warnings || []).find((warning) => warning.startsWith(prefix));
+  if (mode === "Speed") {
+    const slow = take("Slow");
+    if (!slow) return check;
+    return { ...check, ok: false, reason: slow, warnings: check.warnings.filter((warning) => warning !== slow) };
+  }
+  if (mode === "Weight") {
+    const heavy = take("Heavy page");
+    if (!heavy) return check;
+    return { ...check, ok: false, reason: heavy, warnings: check.warnings.filter((warning) => warning !== heavy) };
+  }
+  if (mode === "Prices" && check.kind === "product" && !check.prices) {
+    const reason = "No price on this product.";
+    return { ...check, ok: false, reason, warnings: (check.warnings || []).filter((warning) => warning !== reason) };
+  }
+  return check;
+}
 
 export function shopPages(config) {
   const origin = new URL(publicHttpsUrl(config?.url));
@@ -126,11 +154,12 @@ export function paceNotes(ms, bytes) {
   return notes;
 }
 
-export async function smokeShop(config, { fetchImpl = fetch, timeoutMs = 25000, now = () => new Date(), onPage } = {}) {
+export async function smokeShop(config, { fetchImpl = fetch, timeoutMs = 25000, now = () => new Date(), onPage, aspect = "Open" } = {}) {
+  const mode = normalAspect(aspect);
   const pages = config?.sitemaps?.length ? await discoverPages(config, fetchImpl) : shopPages(config);
   const checks = [];
   for (const page of pages) {
-    const check = await openPage(page, fetchImpl, timeoutMs);
+    const check = judgeCheck(await openPage(page, fetchImpl, timeoutMs), mode);
     checks.push(check);
     if (onPage) onPage(check, checks.length, pages.length);
   }
@@ -138,6 +167,7 @@ export async function smokeShop(config, { fetchImpl = fetch, timeoutMs = 25000, 
     name: String(config?.name || "Shop").trim() || "Shop",
     url: publicHttpsUrl(config?.url),
     checkedAt: londonClock(now()),
+    aspect: mode,
     ok: checks.every((check) => check.ok),
     checks,
   };
@@ -341,6 +371,7 @@ export function smokeReport(result) {
     `${result.ok ? "✅" : "❌"} ${result.name}`,
     `🕘 ${result.checkedAt}`,
     `🔗 ${result.url}`,
+    `🎯 ${result.aspect || "Open"}`,
     `📚 ${Object.entries(summary.kinds).map(([kind, count]) => `${count} ${kind}`).join("   ")}`,
   ];
   if (summary.slowest) lines.push(`🐢 Slowest  ${summary.slowest.emoji} ${summary.slowest.name}  ${seconds(summary.slowest.ms)}`);
@@ -369,18 +400,31 @@ export function smokeReport(result) {
   return `${lines.join("\n")}\n`;
 }
 
+function partLabel(section) {
+  return section.file === "checkout" ? "Checkout" : section.name;
+}
+
+function runsWhen(section) {
+  return ["All", partLabel(section)]
+    .map((label) => `(params.PART ?: 'All') == '${label.replace(/'/g, "\\'")}'`)
+    .join(" || ");
+}
+
 export function jenkinsSmoke(config, configPath = "sites/abayas-boutique/smoke.json") {
   const sections = Array.isArray(config?.sections) ? config.sections : [];
   if (!sections.length) throw new Error("Name the smoke stages.");
   for (const section of sections) {
     if (!/^[a-z0-9-]+$/.test(section.file || "")) throw new Error(`${section.name} needs a short file name.`);
   }
-  const stages = sections.map((section, index) => {
-    const version = index === 0 ? "          sh 'node --version'\n" : "";
-    return `    stage('${section.name}') {
+  const partChoices = ["All", ...sections.map(partLabel)].join("\\n");
+  const aspectChoices = SMOKE_ASPECTS.join("\\n");
+  const stages = sections.map((section) => `    stage('${section.name}') {
+      when {
+        expression { return ${runsWhen(section)} }
+      }
       steps {
         dir('site-status') {
-${version}          sh 'node scripts/smoke-shop.mjs ../${configPath} smoke-${section.file}.txt "${section.name}"'
+          sh "node scripts/smoke-shop.mjs ../${configPath} smoke-${section.file}.txt \\"${section.name}\\" \\"\${params.ASPECT}\\""
         }
       }
       post {
@@ -388,10 +432,9 @@ ${version}          sh 'node scripts/smoke-shop.mjs ../${configPath} smoke-${sec
           archiveArtifacts artifacts: 'site-status/smoke-${section.file}.txt,site-status/smoke-${section.file}.html', allowEmptyArchive: true
         }
       }
-    }`;
-  }).join("\n\n");
+    }`).join("\n\n");
   const files = sections.flatMap((section) => [`site-status/smoke-${section.file}.txt`, `site-status/smoke-${section.file}.html`]).join(" ");
-  return `// Smoke test for ${config.name}. Each stage opens one part of the shop.
+  return `// Smoke test for ${config.name}. Pick a part of the shop and what to judge.
 pipeline {
   agent any
 
@@ -402,7 +445,28 @@ pipeline {
     timeout(time: 60, unit: 'MINUTES')
   }
 
+  parameters {
+    choice(
+      name: 'PART',
+      choices: "${partChoices}",
+      description: 'Which part of the shop to open. All opens every stage. Checkout opens the bag, account, and checkout.'
+    )
+    choice(
+      name: 'ASPECT',
+      choices: "${aspectChoices}",
+      description: 'Open fails when a page is down. Speed also fails when a page is slow. Weight fails when a page is heavy. Prices fails when a product has no price.'
+    )
+  }
+
   stages {
+    stage('Prepare') {
+      steps {
+        dir('site-status') {
+          sh 'node --version'
+        }
+      }
+    }
+
 ${stages}
   }
 
@@ -513,6 +577,7 @@ export function smokeHtml(result) {
     <p>🕘 ${escapeHtml(result.checkedAt)}</p>
     <p>🔗 ${escapeHtml(result.url)}</p>
     <div class="chips">
+      <span class="chip">🎯 ${escapeHtml(result.aspect || "Open")}</span>
       <span class="chip">📄 ${result.checks.length} pages</span>
       ${Object.entries(summary.kinds).map(([kind, count]) => `<span class="chip">${escapeHtml(kind)} ${count}</span>`).join("")}
       <span class="chip">${banner}</span>
@@ -535,8 +600,9 @@ function escapeHtml(value) {
 }
 
 async function main() {
-  const [configPath, outPath, sectionName] = process.argv.slice(2);
+  const [configPath, outPath, sectionName, aspectName] = process.argv.slice(2);
   if (!configPath) throw new Error("Pass the shop smoke file.");
+  const aspect = normalAspect(aspectName);
   const saved = JSON.parse(await readFile(configPath, "utf8"));
   const runs = sectionName
     ? [selectSection(saved, sectionName)]
@@ -546,6 +612,7 @@ async function main() {
   const reports = [];
   for (const config of configs) {
     const result = await smokeShop(config, {
+      aspect,
       onPage: (check, done, total) => process.stderr.write(`${config.name} ${done}/${total} ${check.ok ? "ok" : "down"} ${check.name}\n`),
     });
     const report = smokeReport(result);

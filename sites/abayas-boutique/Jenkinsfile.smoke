@@ -1,4 +1,4 @@
-// Smoke test for Abayas Boutique. Each stage opens one part of the shop.
+// Smoke test for Abayas Boutique. Pick a part of the shop and what to judge.
 pipeline {
   agent any
 
@@ -9,12 +9,35 @@ pipeline {
     timeout(time: 60, unit: 'MINUTES')
   }
 
+  parameters {
+    choice(
+      name: 'PART',
+      choices: "All\nShop pages\nCollections\nProducts\nJournal\nCheckout",
+      description: 'Which part of the shop to open. All opens every stage. Checkout opens the bag, account, and checkout.'
+    )
+    choice(
+      name: 'ASPECT',
+      choices: "Open\nSpeed\nWeight\nPrices",
+      description: 'Open fails when a page is down. Speed also fails when a page is slow. Weight fails when a page is heavy. Prices fails when a product has no price.'
+    )
+  }
+
   stages {
-    stage('Shop pages') {
+    stage('Prepare') {
       steps {
         dir('site-status') {
           sh 'node --version'
-          sh 'node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-shop-pages.txt "Shop pages"'
+        }
+      }
+    }
+
+    stage('Shop pages') {
+      when {
+        expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Shop pages' }
+      }
+      steps {
+        dir('site-status') {
+          sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-shop-pages.txt \"Shop pages\" \"${params.ASPECT}\""
         }
       }
       post {
@@ -25,9 +48,12 @@ pipeline {
     }
 
     stage('Collections') {
+      when {
+        expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Collections' }
+      }
       steps {
         dir('site-status') {
-          sh 'node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-collections.txt "Collections"'
+          sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-collections.txt \"Collections\" \"${params.ASPECT}\""
         }
       }
       post {
@@ -38,9 +64,12 @@ pipeline {
     }
 
     stage('Products') {
+      when {
+        expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Products' }
+      }
       steps {
         dir('site-status') {
-          sh 'node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-products.txt "Products"'
+          sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-products.txt \"Products\" \"${params.ASPECT}\""
         }
       }
       post {
@@ -51,9 +80,12 @@ pipeline {
     }
 
     stage('Journal') {
+      when {
+        expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Journal' }
+      }
       steps {
         dir('site-status') {
-          sh 'node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-journal.txt "Journal"'
+          sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-journal.txt \"Journal\" \"${params.ASPECT}\""
         }
       }
       post {
@@ -64,9 +96,12 @@ pipeline {
     }
 
     stage('Bag, account, and checkout') {
+      when {
+        expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Checkout' }
+      }
       steps {
         dir('site-status') {
-          sh 'node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-checkout.txt "Bag, account, and checkout"'
+          sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-checkout.txt \"Bag, account, and checkout\" \"${params.ASPECT}\""
         }
       }
       post {

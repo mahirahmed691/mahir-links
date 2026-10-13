@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { describeUrl, discoverPages, jenkinsSmoke, notableNotes, paceNotes, selectSection, shopPages, sitemapLocs, smokeHtml, smokeReport, smokeShop } from "../scripts/smoke-shop.mjs";
+import { describeUrl, discoverPages, jenkinsSmoke, judgeCheck, normalAspect, notableNotes, paceNotes, selectSection, shopPages, sitemapLocs, smokeHtml, smokeReport, smokeShop } from "../scripts/smoke-shop.mjs";
 
 const shop = {
   name: "Abayas Boutique",
@@ -106,6 +106,18 @@ test("a page that is not html fails", async () => {
     }),
   });
   assert.equal(result.checks.find((check) => check.name === "Home").reason, "the page was not html");
+});
+
+test("speed, weight, and prices can fail a page that is still open", () => {
+  const slow = { ok: true, kind: "page", prices: 1, warnings: ["Slow. 2.7s. A customer is waiting.", "Heavy page. 1.4 MB."] };
+  assert.equal(judgeCheck(slow, "Open").ok, true);
+  assert.equal(judgeCheck(slow, "Speed").ok, false);
+  assert.match(judgeCheck(slow, "Speed").reason, /Slow/);
+  assert.equal(judgeCheck(slow, "Weight").ok, false);
+  const bare = { ok: true, kind: "product", prices: 0, warnings: ["No price on this product."] };
+  assert.equal(judgeCheck(bare, "Prices").ok, false);
+  assert.equal(judgeCheck({ ...bare, prices: 2, warnings: [] }, "Prices").ok, true);
+  assert.throws(() => normalAspect("Colour"), /aspect must be one of/);
 });
 
 test("a heavy page stays in the open list and a slow page needs a look", () => {
