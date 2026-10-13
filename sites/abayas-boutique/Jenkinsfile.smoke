@@ -1,0 +1,30 @@
+// Smoke test for Abayas Boutique. Fails when a customer page is down.
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  stages {
+    stage('Smoke test the shop') {
+      steps {
+        dir('site-status') {
+          sh 'node --version'
+          sh 'node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke.txt'
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      archiveArtifacts artifacts: 'site-status/smoke.txt', onlyIfSuccessful: true
+    }
+    cleanup {
+      sh 'rm -f site-status/smoke.txt'
+    }
+  }
+}

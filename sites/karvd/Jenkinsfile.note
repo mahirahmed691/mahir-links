@@ -1,0 +1,31 @@
+// Private LinkedIn note for KARV'D. Paste it yourself.
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  stages {
+    stage('Write the LinkedIn note') {
+      steps {
+        writeFile file: 'site-status/pitch-request.json', text: "{\"name\":\"KARV'D\"}"
+        dir('site-status') {
+          sh 'node --version'
+          sh 'node scripts/pitch.mjs pitch-request.json pitch.txt'
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      archiveArtifacts artifacts: 'site-status/pitch.txt', onlyIfSuccessful: true
+    }
+    cleanup {
+      sh 'rm -f site-status/pitch-request.json site-status/pitch.txt'
+    }
+  }
+}

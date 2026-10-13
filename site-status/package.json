@@ -5,7 +5,10 @@
   "scripts": {
     "test": "node --test",
     "check": "node scripts/check.mjs",
-    "pitch": "node scripts/pitch.mjs"
+    "pitch": "node scripts/pitch.mjs",
+    "content": "node scripts/content.mjs",
+    "pack": "node scripts/pack.mjs",
+    "smoke:abayas": "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json"
   },
   "engines": {
     "node": ">=20"

@@ -1,0 +1,31 @@
+// Public posts for RAPIDER, written as a Coaching. Paste them yourself.
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  stages {
+    stage('Write the week of posts') {
+      steps {
+        writeFile file: 'site-status/content-request.json', text: "{\"niche\":\"Coaching\"}"
+        dir('site-status') {
+          sh 'node --version'
+          sh 'node scripts/content.mjs content-request.json content'
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      archiveArtifacts artifacts: 'site-status/content/*.txt', onlyIfSuccessful: true
+    }
+    cleanup {
+      sh 'rm -rf site-status/content site-status/content-request.json'
+    }
+  }
+}
