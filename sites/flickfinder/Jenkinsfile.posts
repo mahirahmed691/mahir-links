@@ -1,0 +1,27 @@
+// FlickFinder has no shop niche, so there is no public post pack.
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  stages {
+    stage('No public posts') {
+      steps {
+        writeFile file: 'site-status/no-posts.txt', text: "FlickFinder is not a shop niche, so this folder does not draft public posts.\nUse the note pipeline for the private LinkedIn note.\n"
+      }
+    }
+  }
+
+  post {
+    success {
+      archiveArtifacts artifacts: 'site-status/no-posts.txt', onlyIfSuccessful: true
+    }
+    cleanup {
+      sh 'rm -f site-status/no-posts.txt'
+    }
+  }
+}
