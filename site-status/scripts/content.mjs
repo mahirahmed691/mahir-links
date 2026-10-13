@@ -208,6 +208,10 @@ export function findNiche(label) {
   return niches.find((niche) => niche.label === name) || null;
 }
 
+export function nicheForWeek(date = new Date()) {
+  return niches[(weekNumber(date) - 1) % niches.length];
+}
+
 export function nichePack(niche, date = new Date()) {
   const week = weekOf(date);
   const posts = [

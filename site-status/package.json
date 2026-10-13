@@ -6,7 +6,8 @@
     "test": "node --test",
     "check": "node scripts/check.mjs",
     "pitch": "node scripts/pitch.mjs",
-    "content": "node scripts/content.mjs"
+    "content": "node scripts/content.mjs",
+    "pack": "node scripts/pack.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -1,0 +1,64 @@
+# Monday morning pack: one niche, four posts, four pictures. The zip is for pasting.
+# Nothing is published. 06:00 UTC is 07:00 in British Summer Time and 06:00 in winter.
+name: Social pack
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      niche:
+        description: Niche for this pack. Leave blank to use this week's niche.
+        required: false
+        type: string
+  pull_request:
+    paths:
+      - "site-status/scripts/content.mjs"
+      - "site-status/scripts/cards.mjs"
+      - "site-status/scripts/pack.mjs"
+      - "site-status/test/cards.test.mjs"
+      - ".github/workflows/social-pack.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Test the copy and the card rules
+        working-directory: site-status
+        run: npm test
+
+      - name: Install the card browser
+        working-directory: site-status
+        run: npm install --no-save playwright@1.55.1 && npx playwright install --with-deps chromium
+
+      - name: Render this week's pack
+        working-directory: site-status
+        env:
+          NICHE: ${{ inputs.niche }}
+        run: node scripts/pack.mjs --shots ../social-pack
+
+      - name: Upload the pack
+        uses: actions/upload-artifact@v7
+        with:
+          name: social-pack
+          path: social-pack
+          retention-days: 14
+
+      - name: Summary
+        run: |
+          {
+            echo "### Social pack"
+            echo "Download the **social-pack** artifact and paste the posts yourself."
+            echo
+            cat social-pack/index.txt
+          } >> "$GITHUB_STEP_SUMMARY"
