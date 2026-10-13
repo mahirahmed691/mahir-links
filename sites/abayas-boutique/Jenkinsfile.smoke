@@ -36,8 +36,10 @@ pipeline {
         expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Shop pages' }
       }
       steps {
-        dir('site-status') {
-          sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-shop-pages.txt \"Shop pages\" \"${params.ASPECT}\""
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          dir('site-status') {
+            sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-shop-pages.txt \"Shop pages\" \"${params.ASPECT}\""
+          }
         }
       }
       post {
@@ -52,8 +54,10 @@ pipeline {
         expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Collections' }
       }
       steps {
-        dir('site-status') {
-          sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-collections.txt \"Collections\" \"${params.ASPECT}\""
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          dir('site-status') {
+            sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-collections.txt \"Collections\" \"${params.ASPECT}\""
+          }
         }
       }
       post {
@@ -68,8 +72,10 @@ pipeline {
         expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Products' }
       }
       steps {
-        dir('site-status') {
-          sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-products.txt \"Products\" \"${params.ASPECT}\""
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          dir('site-status') {
+            sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-products.txt \"Products\" \"${params.ASPECT}\""
+          }
         }
       }
       post {
@@ -84,8 +90,10 @@ pipeline {
         expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Journal' }
       }
       steps {
-        dir('site-status') {
-          sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-journal.txt \"Journal\" \"${params.ASPECT}\""
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          dir('site-status') {
+            sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-journal.txt \"Journal\" \"${params.ASPECT}\""
+          }
         }
       }
       post {
@@ -100,8 +108,10 @@ pipeline {
         expression { return (params.PART ?: 'All') == 'All' || (params.PART ?: 'All') == 'Checkout' }
       }
       steps {
-        dir('site-status') {
-          sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-checkout.txt \"Bag, account, and checkout\" \"${params.ASPECT}\""
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          dir('site-status') {
+            sh "node scripts/smoke-shop.mjs ../sites/abayas-boutique/smoke.json smoke-checkout.txt \"Bag, account, and checkout\" \"${params.ASPECT}\""
+          }
         }
       }
       post {

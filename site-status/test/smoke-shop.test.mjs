@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { describeUrl, discoverPages, jenkinsSmoke, judgeCheck, normalAspect, notableNotes, paceNotes, selectSection, shopPages, sitemapLocs, smokeHtml, smokeReport, smokeShop } from "../scripts/smoke-shop.mjs";
+import { describeUrl, discoverPages, jenkinsSmoke, judgeCheck, normalAspect, notableNotes, paceNotes, pageFix, retestFailed, selectSection, shopPages, sitemapLocs, smokeHtml, smokeReport, smokeShop } from "../scripts/smoke-shop.mjs";
 
 const shop = {
   name: "Abayas Boutique",
@@ -118,6 +118,51 @@ test("speed, weight, and prices can fail a page that is still open", () => {
   assert.equal(judgeCheck(bare, "Prices").ok, false);
   assert.equal(judgeCheck({ ...bare, prices: 2, warnings: [] }, "Prices").ok, true);
   assert.throws(() => normalAspect("Colour"), /aspect must be one of/);
+});
+
+test("a page that answers the second time passes, and a dead host is not hammered", async () => {
+  const down = (name) => ({
+    name,
+    emoji: "📄",
+    url: `https://abayasboutique.com/${name.toLowerCase()}`,
+    expect: "Abayas Boutique",
+    kind: "page",
+    ok: false,
+    reason: "it never answered",
+    warnings: [],
+  });
+  const quiet = [down("Home"), down("About"), down("Contact")];
+  let calls = 0;
+  const stillDown = await retestFailed(quiet, async () => {
+    calls += 1;
+    return { ...quiet[0], ok: false, reason: "it never answered", warnings: [] };
+  });
+  assert.equal(calls, 1);
+  assert.match(stillDown[0].again, /Still failing/);
+  assert.match(stillDown[1].again, /Left alone/);
+  assert.match(stillDown[0].fix, /host is still running/);
+  assert.match(stillDown[2].fix, /host is still running/);
+
+  calls = 0;
+  const bag = { name: "Bag", emoji: "🛍️", url: "https://abayasboutique.com/cart/", expect: "Bag", kind: "page", ok: false, reason: "it never answered", warnings: [] };
+  const settled = await retestFailed([bag], async (page) => {
+    calls += 1;
+    return { name: page.name, emoji: page.emoji, url: page.url, finalUrl: page.url, status: 200, ok: true, reason: "", warnings: [], kind: "page", ms: 20, bytes: 100 };
+  });
+  assert.equal(calls, 1);
+  assert.equal(settled[0].ok, true);
+  assert.equal(settled[0].recovered, true);
+  assert.match(smokeReport({ name: "Shop", url: "https://abayasboutique.com", checkedAt: "Tuesday", ok: true, aspect: "Open", checks: settled }), /answered the second time/);
+
+  calls = 0;
+  const missing = { name: "Home", emoji: "🏠", url: "https://abayasboutique.com/", ok: false, reason: 'the page did not include "Abayas Boutique"', warnings: [] };
+  const named = await retestFailed([missing], async () => {
+    calls += 1;
+    return missing;
+  });
+  assert.equal(calls, 0);
+  assert.equal(pageFix(missing), "I'd put the missing shop text back on this page.");
+  assert.equal(named[0].fix, pageFix(missing));
 });
 
 test("a heavy page stays in the open list and a slow page needs a look", () => {

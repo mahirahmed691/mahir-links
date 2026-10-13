@@ -155,6 +155,85 @@ export function paceNotes(ms, bytes) {
   return notes;
 }
 
+export function pageFix(check) {
+  const reason = String(check?.reason || "");
+  if (!check?.ok) {
+    if (reason === "it never answered") return "I'd check that the host is still running.";
+    if (reason === "it could not be reached") return "I'd check the domain.";
+    if (reason === "status 404") return "I'd check this address. The shop has no page here.";
+    if (/^status 5\d\d$/.test(reason)) return "I'd check the host logs.";
+    if (reason.startsWith("status ")) return `I'd check why this page answers ${reason.slice("status ".length)}.`;
+    if (reason.startsWith("it left the shop")) return "I'd point this link back at the shop.";
+    if (reason === "the page was not html") return "I'd serve this address as a page.";
+    if (reason.startsWith("the page did not include")) return "I'd put the missing shop text back on this page.";
+    if (reason.startsWith("only ")) return "I'd put the products back on this page.";
+    if (reason.startsWith("Slow")) return "I'd cache this page. A customer is waiting.";
+    if (reason.startsWith("Heavy page")) return "I'd cut the pictures down on this page.";
+    if (reason.startsWith("No price")) return "I'd put a price on this product.";
+    if (reason === "the shop sent a broken address") return "I'd check the address the shop sent back.";
+    return "I'd open this page again.";
+  }
+  const notes = notableNotes(check);
+  if (notes.some((note) => note.startsWith("Slow"))) return "I'd cache this page. A customer is waiting.";
+  if (notes.some((note) => note === "No title.")) return "I'd add a title to this page.";
+  if (notes.some((note) => note === "No heading.")) return "I'd add a heading to this page.";
+  if (notes.some((note) => note === "No description.")) return "I'd add a short description to this page.";
+  if (notes.some((note) => note.startsWith("No products"))) return "I'd add a product to this collection.";
+  if (notes.some((note) => note.startsWith("No price"))) return "I'd put a price on this product.";
+  return "";
+}
+
+export function canRecover(check) {
+  const reason = String(check?.reason || "");
+  return reason === "it never answered" || reason === "it could not be reached" || /^status 5\d\d$/.test(reason) || reason.startsWith("Slow");
+}
+
+function isHostWide(reason) {
+  const text = String(reason || "");
+  return text === "it never answered" || text === "it could not be reached" || /^status 5\d\d$/.test(text);
+}
+
+function asPage(check) {
+  return {
+    name: check.name,
+    emoji: check.emoji,
+    url: check.url,
+    expect: check.expect,
+    minProducts: check.minProducts || 0,
+    kind: check.kind,
+  };
+}
+
+export async function retestFailed(checks, open, aspect = "Open") {
+  const mode = normalAspect(aspect);
+  const failed = checks.filter((check) => !check.ok);
+  const recoverable = failed.filter(canRecover);
+  const hostWide = recoverable.filter((check) => isHostWide(check.reason));
+  const probeFirst = hostWide.length > 1 && hostWide.length === recoverable.length;
+  const replacements = new Map();
+  const record = (check, next) => {
+    const tried = { ...next, attempts: 2 };
+    replacements.set(check, next.ok
+      ? { ...tried, recovered: true, again: "Opened again. It answered." }
+      : { ...tried, again: "Opened again. Still failing.", fix: pageFix(next) });
+  };
+  const queue = probeFirst ? [hostWide[0]] : recoverable;
+  for (const check of queue) record(check, judgeCheck(await open(asPage(check)), mode));
+  if (probeFirst && replacements.get(hostWide[0])?.ok) {
+    for (const check of hostWide.slice(1)) record(check, judgeCheck(await open(asPage(check)), mode));
+  } else if (probeFirst) {
+    for (const check of hostWide.slice(1)) {
+      replacements.set(check, { ...check, again: "Left alone. The host is still down.", fix: pageFix(check) });
+    }
+  }
+  return checks.map((check) => {
+    if (replacements.has(check)) return replacements.get(check);
+    if (!check.ok) return { ...check, fix: pageFix(check) };
+    const fix = pageFix(check);
+    return fix ? { ...check, fix } : check;
+  });
+}
+
 export async function smokeShop(config, { fetchImpl = fetch, timeoutMs = 25000, now = () => new Date(), onPage, aspect = "Open" } = {}) {
   const mode = normalAspect(aspect);
   const pages = config?.sitemaps?.length ? await discoverPages(config, fetchImpl) : shopPages(config);
@@ -164,13 +243,14 @@ export async function smokeShop(config, { fetchImpl = fetch, timeoutMs = 25000, 
     checks.push(check);
     if (onPage) onPage(check, checks.length, pages.length);
   }
+  const settled = await retestFailed(checks, (page) => openPage(page, fetchImpl, timeoutMs), mode);
   return {
     name: String(config?.name || "Shop").trim() || "Shop",
     url: publicHttpsUrl(config?.url),
     checkedAt: londonClock(now()),
     aspect: mode,
-    ok: checks.every((check) => check.ok),
-    checks,
+    ok: settled.every((check) => check.ok),
+    checks: settled,
   };
 }
 
@@ -219,6 +299,8 @@ async function openPage(page, fetchImpl, timeoutMs) {
       type,
       bytes,
       ms,
+      expect: page.expect,
+      minProducts: page.minProducts || 0,
       ok: !reason,
       reason,
       warnings: reason ? [] : pageNotes(page, { ...detail, ms, bytes }),
@@ -228,6 +310,8 @@ async function openPage(page, fetchImpl, timeoutMs) {
     return {
       ...blank,
       ms: Date.now() - started,
+      expect: page.expect,
+      minProducts: page.minProducts || 0,
       ok: false,
       reason: timedOut ? "it never answered" : "it could not be reached",
     };
@@ -367,6 +451,7 @@ export function smokeReport(result) {
   const summary = summarise(result);
   const down = result.checks.filter((check) => !check.ok);
   const look = result.checks.filter((check) => check.ok && notableNotes(check).length);
+  const recovered = result.checks.filter((check) => check.recovered);
   const heavy = result.checks.filter((check) => (check.warnings || []).some((warning) => warning.startsWith("Heavy page"))).length;
   const lines = [
     `${result.ok ? "✅" : "❌"} ${result.name}`,
@@ -384,8 +469,15 @@ export function smokeReport(result) {
     for (const check of [...down, ...look]) {
       lines.push(`${check.ok ? "⚠️" : "❌"} ${check.emoji} ${check.name}  ${check.finalUrl}`);
       if (!check.ok) lines.push(`   ❌ ${check.reason}`);
+      if (check.again) lines.push(`   🔁 ${check.again}`);
       for (const warning of notableNotes(check)) lines.push(`   ⚠️ ${warning}`);
+      const fix = check.fix || pageFix(check);
+      if (fix) lines.push(`   🔧 ${fix}`);
     }
+  }
+  if (recovered.length) {
+    lines.push("", "Opened again");
+    for (const check of recovered) lines.push(`🔁 ${check.emoji} ${check.name}  answered the second time`);
   }
   lines.push("", "Every page");
   for (const check of result.checks) {
@@ -395,7 +487,7 @@ export function smokeReport(result) {
   lines.push(
     "",
     result.ok
-      ? `✅ Pass. ${result.checks.length} pages open.${look.length ? ` ⚠️ ${look.length} need a look.` : ""}`
+      ? `✅ Pass. ${result.checks.length} pages open.${recovered.length ? ` ${recovered.length} answered on a second try.` : ""}${look.length ? ` ⚠️ ${look.length} need a look.` : ""}`
       : `❌ Fail. ${down.length} ${down.length === 1 ? "page" : "pages"} down.`,
   );
   return `${lines.join("\n")}\n`;
@@ -424,8 +516,10 @@ export function jenkinsSmoke(config, configPath = "sites/abayas-boutique/smoke.j
         expression { return ${runsWhen(section)} }
       }
       steps {
-        dir('site-status') {
-          sh "node scripts/smoke-shop.mjs ../${configPath} smoke-${section.file}.txt \\"${section.name}\\" \\"\${params.ASPECT}\\""
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          dir('site-status') {
+            sh "node scripts/smoke-shop.mjs ../${configPath} smoke-${section.file}.txt \\"${section.name}\\" \\"\${params.ASPECT}\\""
+          }
         }
       }
       post {
@@ -519,9 +613,13 @@ export function smokeHtml(result) {
       ["⏱️", "Time", seconds(check.ms)],
       ["📦", "Size", size(check.bytes)],
     ];
+    const fix = check.fix || pageFix(check);
     const notes = [
       ...check.warnings.map((warning) => `<p class="note warn">⚠️ ${escapeHtml(warning)}</p>`),
       check.ok ? "" : `<p class="note fail">❌ ${escapeHtml(check.reason)}</p>`,
+      check.again ? `<p class="note fix">🔁 ${escapeHtml(check.again)}</p>` : "",
+      check.recovered ? `<p class="note fix">🔁 Opened again. It answered.</p>` : "",
+      fix && !check.recovered ? `<p class="note fix">🔧 ${escapeHtml(fix)}</p>` : "",
     ].join("");
     return `<article class="card ${tone}">
       <header><span class="emoji">${check.emoji}</span><div><h2>${escapeHtml(check.name)}</h2><p>${check.ok ? "✅ Open" : "❌ Down"}</p></div></header>
@@ -570,6 +668,7 @@ export function smokeHtml(result) {
     .note { border-radius: 12px; padding: 10px 12px; font-weight: 700; }
     .note.warn { background: #FFF4CC; color: #8A5A00; }
     .note.fail { background: #FDE8EC; color: #9E2436; }
+    .note.fix { background: #EEE9FF; color: #3D2A99; margin-top: 8px; }
   </style>
 </head>
 <body>
