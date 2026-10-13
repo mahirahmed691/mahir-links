@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { paceNotes, shopPages, smokeHtml, smokeReport, smokeShop } from "../scripts/smoke-shop.mjs";
+import { describeUrl, discoverPages, paceNotes, shopPages, sitemapLocs, smokeHtml, smokeReport, smokeShop } from "../scripts/smoke-shop.mjs";
 
 const shop = {
   name: "Abayas Boutique",
@@ -35,16 +35,17 @@ function fakeFetch(overrides = {}) {
 test("the Abayas Boutique smoke file checks the customer pages", async () => {
   const saved = JSON.parse(await readFile(new URL("../../sites/abayas-boutique/smoke.json", import.meta.url), "utf8"));
   assert.equal(saved.url, "https://abayasboutique.com");
-  assert.deepEqual(shopPages(saved).map((page) => page.url), [
-    "https://abayasboutique.com/",
-    "https://abayasboutique.com/collections/abayas/",
-    "https://abayasboutique.com/collections/new-arrivals/",
-    "https://abayasboutique.com/collections/bestsellers/",
-    "https://abayasboutique.com/collections/hijabs/",
+  assert.deepEqual(saved.sitemaps, [
+    "https://abayasboutique.com/page-sitemap.xml",
+    "https://abayasboutique.com/product_cat-sitemap.xml",
+    "https://abayasboutique.com/product-sitemap.xml",
+    "https://abayasboutique.com/post-sitemap.xml",
+    "https://abayasboutique.com/category-sitemap.xml",
+  ]);
+  assert.deepEqual(shopPages({ url: saved.url, pages: saved.extra }).map((page) => page.url), [
     "https://abayasboutique.com/cart/",
     "https://abayasboutique.com/my-account/",
-    "https://abayasboutique.com/privacy-policy/",
-    "https://abayasboutique.com/return-exchange/",
+    "https://abayasboutique.com/checkout/",
   ]);
   const jenkins = await readFile(new URL("../../sites/abayas-boutique/Jenkinsfile.smoke", import.meta.url), "utf8");
   assert.match(jenkins, /smoke-shop\.mjs/);
@@ -115,6 +116,30 @@ test("a shop page with no products fails when products are required", async () =
   );
   assert.equal(result.ok, false);
   assert.match(result.checks[0].reason, /only 0 products/);
+});
+
+test("the sitemap walk keeps shop urls and names each kind", async () => {
+  const locs = sitemapLocs("<loc>https://abayasboutique.com/about-us/</loc><loc>https://abayasboutique.com/product/ona-green/</loc>");
+  assert.equal(locs.length, 2);
+  assert.equal(describeUrl("https://abayasboutique.com/product/ona-green/").kind, "product");
+  assert.equal(describeUrl("https://abayasboutique.com/collections/hijabs/").kind, "collection");
+  assert.equal(describeUrl("https://abayasboutique.com/blog/history-of-the-abaya/").kind, "journal");
+  const config = {
+    url: "https://abayasboutique.com",
+    sitemaps: ["https://abayasboutique.com/page-sitemap.xml"],
+    extra: [{ name: "Bag", emoji: "🛍️", path: "/cart/", expect: "Bag" }],
+  };
+  const fetchImpl = async (url) => ({
+    status: 200,
+    url,
+    headers: { get: () => "application/xml" },
+    text: async () => "<loc>https://abayasboutique.com/about-us/</loc><loc>https://abayasboutique.com/cart/</loc><loc>https://other.example/nope</loc>",
+  });
+  const pages = await discoverPages(config, fetchImpl);
+  assert.deepEqual(pages.map((page) => page.url), [
+    "https://abayasboutique.com/cart/",
+    "https://abayasboutique.com/about-us/",
+  ]);
 });
 
 test("a page on another site is refused", () => {

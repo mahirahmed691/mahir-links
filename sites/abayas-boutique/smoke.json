@@ -1,15 +1,16 @@
 {
   "name": "Abayas Boutique",
   "url": "https://abayasboutique.com",
-  "pages": [
-    { "name": "Home", "emoji": "🏠", "path": "/", "expect": "Abayas Boutique", "minProducts": 1 },
-    { "name": "Abayas", "emoji": "👗", "path": "/collections/abayas/", "expect": "Abayas Boutique", "minProducts": 1 },
-    { "name": "New arrivals", "emoji": "✨", "path": "/collections/new-arrivals/", "expect": "New Arrivals", "minProducts": 1 },
-    { "name": "Bestsellers", "emoji": "💛", "path": "/collections/bestsellers/", "expect": "Bestselling", "minProducts": 1 },
-    { "name": "Hijabs", "emoji": "🧕", "path": "/collections/hijabs/", "expect": "Hijabs", "minProducts": 1 },
-    { "name": "Bag", "emoji": "🛍️", "path": "/cart/", "expect": "Bag" },
-    { "name": "Account", "emoji": "👤", "path": "/my-account/", "expect": "My account" },
-    { "name": "Privacy", "emoji": "🔒", "path": "/privacy-policy/", "expect": "Privacy Policy" },
-    { "name": "Returns", "emoji": "↩️", "path": "/return-exchange/", "expect": "Returns" }
+  "sitemaps": [
+    "https://abayasboutique.com/page-sitemap.xml",
+    "https://abayasboutique.com/product_cat-sitemap.xml",
+    "https://abayasboutique.com/product-sitemap.xml",
+    "https://abayasboutique.com/post-sitemap.xml",
+    "https://abayasboutique.com/category-sitemap.xml"
+  ],
+  "extra": [
+    { "name": "Bag", "emoji": "🛍️", "path": "/cart/", "expect": "Bag", "kind": "page" },
+    { "name": "Account", "emoji": "👤", "path": "/my-account/", "expect": "My account", "kind": "page" },
+    { "name": "Checkout", "emoji": "💳", "path": "/checkout/", "expect": "Abayas Boutique", "kind": "page" }
   ]
 }

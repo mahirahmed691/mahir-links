@@ -21,8 +21,86 @@ export function shopPages(config) {
     const url = new URL(page.path, origin);
     const safe = publicHttpsUrl(url);
     if (new URL(safe).host !== origin.host) throw new Error(`${name} must stay on ${origin.host}.`);
-    return { name, emoji, url: safe, expect, minProducts };
+    return { name, emoji, url: safe, expect, minProducts, kind: page?.kind || "page" };
   });
+}
+
+export function sitemapLocs(xml) {
+  return [...String(xml).matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/g)].map((match) => match[1].replace(/&amp;/g, "&").trim());
+}
+
+export function describeUrl(value) {
+  const url = new URL(value);
+  const path = url.pathname;
+  let kind = "page";
+  let emoji = "📄";
+  if (/^\/product\/.+/.test(path)) {
+    kind = "product";
+    emoji = "👗";
+  } else if (path.startsWith("/collections")) {
+    kind = "collection";
+    emoji = "🗂️";
+  } else if (path.startsWith("/blog")) {
+    kind = "journal";
+    emoji = "📰";
+  } else if (path === "/") emoji = "🏠";
+  return { kind, emoji, name: nameFromPath(path) };
+}
+
+function nameFromPath(pathname) {
+  if (!pathname || pathname === "/") return "Home";
+  const slug = pathname.split("/").filter(Boolean).at(-1);
+  return slug.replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function pageKey(value) {
+  const url = new URL(value);
+  return `${url.host}${url.pathname.replace(/\/$/, "") || "/"}`;
+}
+
+export async function discoverPages(config, fetchImpl) {
+  const origin = new URL(publicHttpsUrl(config?.url));
+  const extras = shopPages({ url: origin, pages: config?.extra || [] });
+  const found = [];
+  for (const sitemap of config?.sitemaps || []) {
+    const safe = publicHttpsUrl(sitemap);
+    if (new URL(safe).host !== origin.host) throw new Error("The sitemap must stay on the shop.");
+    const response = await fetchImpl(safe, {
+      method: "GET",
+      redirect: "follow",
+      signal: AbortSignal.timeout(25000),
+      headers: { "user-agent": "mahirahmed-site-status" },
+    });
+    const xml = typeof response.text === "function" ? await response.text() : "";
+    for (const loc of sitemapLocs(xml)) {
+      let listed;
+      try {
+        listed = publicHttpsUrl(loc);
+      } catch {
+        continue;
+      }
+      if (new URL(listed).host !== origin.host) continue;
+      const described = describeUrl(listed);
+      found.push({
+        name: described.name,
+        emoji: described.emoji,
+        url: listed,
+        expect: "Abayas Boutique",
+        minProducts: 0,
+        kind: described.kind,
+      });
+    }
+  }
+  const pages = [];
+  const seen = new Set();
+  for (const page of [...extras, ...found]) {
+    const key = pageKey(page.url);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    pages.push(page);
+  }
+  if (!pages.length) throw new Error("The sitemap did not list any shop pages.");
+  return pages;
 }
 
 export function paceNotes(ms, bytes) {
@@ -32,10 +110,13 @@ export function paceNotes(ms, bytes) {
   return notes;
 }
 
-export async function smokeShop(config, { fetchImpl = fetch, timeoutMs = 25000, now = () => new Date() } = {}) {
+export async function smokeShop(config, { fetchImpl = fetch, timeoutMs = 25000, now = () => new Date(), onPage } = {}) {
+  const pages = config?.sitemaps?.length ? await discoverPages(config, fetchImpl) : shopPages(config);
   const checks = [];
-  for (const page of shopPages(config)) {
-    checks.push(await openPage(page, fetchImpl, timeoutMs));
+  for (const page of pages) {
+    const check = await openPage(page, fetchImpl, timeoutMs);
+    checks.push(check);
+    if (onPage) onPage(check, checks.length, pages.length);
   }
   return {
     name: String(config?.name || "Shop").trim() || "Shop",
@@ -60,6 +141,13 @@ async function openPage(page, fetchImpl, timeoutMs) {
     prices: 0,
     images: 0,
     bytes: 0,
+    h1: "",
+    description: "",
+    canonical: "",
+    words: 0,
+    links: 0,
+    forms: 0,
+    kind: page.kind || "page",
     warnings: [],
   };
   try {
@@ -74,21 +162,19 @@ async function openPage(page, fetchImpl, timeoutMs) {
     const type = response.headers?.get?.("content-type") || "";
     const body = typeof response.text === "function" ? await response.text() : "";
     const bytes = Buffer.byteLength(body);
+    const detail = readPage(body);
     const reason = pageReason(page, response.status, finalUrl, type, body);
     return {
       ...blank,
+      ...detail,
       finalUrl,
       status: response.status,
       type,
-      title: pageTitle(body),
-      products: countProducts(body),
-      prices: countPrices(body),
-      images: countImages(body),
       bytes,
       ms,
       ok: !reason,
       reason,
-      warnings: reason ? [] : paceNotes(ms, bytes),
+      warnings: reason ? [] : pageNotes(page, { ...detail, ms, bytes }),
     };
   } catch (error) {
     const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
@@ -127,6 +213,61 @@ function countPrices(body) {
 
 function countImages(body) {
   return (body.match(/<img\b/gi) || []).length;
+}
+
+function readPage(body) {
+  return {
+    title: pageTitle(body),
+    h1: heading(body),
+    description: metaContent(body, "description"),
+    canonical: linkHref(body, "canonical"),
+    products: countProducts(body),
+    prices: countPrices(body),
+    images: countImages(body),
+    words: wordCount(body),
+    links: (body.match(/<a\b/gi) || []).length,
+    forms: (body.match(/<form\b/gi) || []).length,
+  };
+}
+
+function pageNotes(page, detail) {
+  const notes = paceNotes(detail.ms, detail.bytes);
+  if (!detail.title) notes.push("No title.");
+  if (!detail.h1) notes.push("No heading.");
+  if (!detail.description) notes.push("No description.");
+  if (page.kind === "collection" && detail.products === 0) notes.push("No products in this collection.");
+  if (page.kind === "product" && detail.prices === 0) notes.push("No price on this product.");
+  return notes;
+}
+
+function heading(body) {
+  const match = body.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  if (!match) return "";
+  return decode(match[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+}
+
+function metaContent(body, name) {
+  const tag = body.match(new RegExp(`<meta[^>]+name=["']${name}["'][^>]*>`, "i"));
+  if (!tag) return "";
+  const content = tag[0].match(/content=["']([^"']*)["']/i);
+  return content ? decode(content[1].replace(/\s+/g, " ").trim()) : "";
+}
+
+function linkHref(body, rel) {
+  const tag = body.match(new RegExp(`<link[^>]+rel=["']${rel}["'][^>]*>`, "i"));
+  if (!tag) return "";
+  const href = tag[0].match(/href=["']([^"']+)["']/i);
+  return href ? decode(href[1]) : "";
+}
+
+function wordCount(body) {
+  const text = body
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .trim();
+  if (!text) return 0;
+  return text.split(/\s+/).filter(Boolean).length;
 }
 
 function pageTitle(body) {
@@ -172,19 +313,27 @@ function londonClock(date) {
 }
 
 export function smokeReport(result) {
+  const summary = summarise(result);
   const lines = [
     `${result.ok ? "✅" : "❌"} ${result.name} smoke`,
     `🕘 ${result.checkedAt}`,
     `🔗 ${result.url}`,
-    "",
+    `📚 ${Object.entries(summary.kinds).map(([kind, count]) => `${count} ${kind}`).join("   ")}`,
   ];
+  if (summary.slowest) lines.push(`🐢 Slowest  ${summary.slowest.emoji} ${summary.slowest.name}  ${seconds(summary.slowest.ms)}`);
+  if (summary.heaviest) lines.push(`📦 Heaviest  ${summary.heaviest.emoji} ${summary.heaviest.name}  ${size(summary.heaviest.bytes)}`);
+  lines.push("");
   for (const check of result.checks) {
-    lines.push(`${check.ok ? "✅" : "❌"} ${check.emoji} ${check.name}`);
+    lines.push(`${check.ok ? "✅" : "❌"} ${check.emoji} ${check.name}  ·  ${check.kind}`);
     lines.push(`   🔗 ${check.finalUrl}`);
     lines.push(`   🔒 HTTPS  ${hostOf(check.finalUrl)}`);
     lines.push(`   📡 ${check.status ?? "down"}  ${check.type || "no type"}`);
     if (check.title) lines.push(`   🏷️ ${check.title}`);
+    if (check.h1) lines.push(`   📰 ${check.h1}`);
+    if (check.description) lines.push(`   📝 ${check.description}`);
+    if (check.canonical) lines.push(`   🎯 ${check.canonical}`);
     lines.push(`   👗 ${label(check.products, "product", "products")}   💷 ${label(check.prices, "price", "prices")}   🖼️ ${label(check.images, "image", "images")}`);
+    lines.push(`   🔤 ${label(check.words, "word", "words")}   🔗 ${label(check.links, "link", "links")}   📋 ${label(check.forms, "form", "forms")}`);
     lines.push(`   ⏱️ ${seconds(check.ms)}   📦 ${size(check.bytes)}`);
     for (const warning of check.warnings) lines.push(`   ⚠️ ${warning}`);
     if (!check.ok) lines.push(`   ❌ ${check.reason}`);
@@ -200,6 +349,14 @@ export function smokeReport(result) {
   return `${lines.join("\n")}\n`;
 }
 
+function summarise(result) {
+  const kinds = {};
+  for (const check of result.checks) kinds[check.kind || "page"] = (kinds[check.kind || "page"] || 0) + 1;
+  const slowest = result.checks.reduce((best, check) => (!best || check.ms > best.ms ? check : best), null);
+  const heaviest = result.checks.reduce((best, check) => (!best || check.bytes > best.bytes ? check : best), null);
+  return { kinds, slowest, heaviest };
+}
+
 function hostOf(value) {
   try {
     return new URL(value).host;
@@ -211,6 +368,7 @@ function hostOf(value) {
 export function smokeHtml(result) {
   const warnings = result.checks.reduce((sum, check) => sum + check.warnings.length, 0);
   const down = result.checks.filter((check) => !check.ok).length;
+  const summary = summarise(result);
   const cards = result.checks.map((check) => {
     const tone = check.ok ? (check.warnings.length ? "warn" : "pass") : "fail";
     const facts = [
@@ -218,6 +376,12 @@ export function smokeHtml(result) {
       ["🔒", "Lock", `HTTPS on ${hostOf(check.finalUrl)}`],
       ["📡", "Reply", `${check.status ?? "down"} · ${check.type || "no type"}`],
       ["🏷️", "Title", check.title || "No title"],
+      ["📰", "Heading", check.h1 || "No heading"],
+      ["📝", "Description", check.description || "No description"],
+      ["🎯", "Canonical", check.canonical || "No canonical"],
+      ["🔤", "Words", label(check.words || 0, "word", "words")],
+      ["🔗", "Links", label(check.links || 0, "link", "links")],
+      ["📋", "Forms", label(check.forms || 0, "form", "forms")],
       ["👗", "Products", label(check.products, "product", "products")],
       ["💷", "Prices", label(check.prices, "price", "prices")],
       ["🖼️", "Images", label(check.images, "image", "images")],
@@ -274,6 +438,7 @@ export function smokeHtml(result) {
     <p>🔗 ${escapeHtml(result.url)}</p>
     <div class="chips">
       <span class="chip">📄 ${result.checks.length} pages</span>
+      ${Object.entries(summary.kinds).map(([kind, count]) => `<span class="chip">${escapeHtml(kind)} ${count}</span>`).join("")}
       <span class="chip">${banner}</span>
       <span class="chip">⚠️ ${warnings} warnings</span>
       <span class="chip">❌ ${down} down</span>
@@ -297,7 +462,9 @@ async function main() {
   const configPath = process.argv[2];
   if (!configPath) throw new Error("Pass the shop smoke file.");
   const config = JSON.parse(await readFile(configPath, "utf8"));
-  const result = await smokeShop(config);
+  const result = await smokeShop(config, {
+    onPage: (check, done, total) => process.stderr.write(`${done}/${total} ${check.ok ? "ok" : "down"} ${check.name}\n`),
+  });
   const report = smokeReport(result);
   const outPath = process.argv[3];
   if (outPath) {
