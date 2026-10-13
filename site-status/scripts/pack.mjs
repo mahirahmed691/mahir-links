@@ -36,6 +36,7 @@ export function libraryFor(label, date = new Date()) {
   const index = [
     `Week of ${packs[0].pack.week.label}. Theme: ${packs[0].pack.week.name}.`,
     `Post this niche: ${featured.label}.`,
+    "Open this-week.txt. It has the four captions, in order.",
     "Paste these yourself. This job does not post them.",
     `${packs.length} ${packs.length === 1 ? "niche" : "niches"}. ${packs.length * 4} pictures.`,
     "LinkedIn and Facebook pictures are 1200×630. Instagram pictures are 1080×1350.",
@@ -45,7 +46,23 @@ export function libraryFor(label, date = new Date()) {
     ...(later.length ? ["", "Later", ...later.map((pack) => `${pack.niche.label} -> ${pack.niche.slug}/`)] : []),
     "",
   ].join("\n");
-  return { featured, packs, index: `${index.trim()}\n` };
+  return { featured, packs, index: `${index.trim()}\n`, sheet: weekSheet(featured, packs[0]) };
+}
+
+export function weekSheet(niche, pack) {
+  const blocks = pack.files.map((file) => [
+    `${file.post.day} · ${file.post.channel}`,
+    `Picture: ${niche.slug}/${file.stem}.png`,
+    file.text.trim(),
+  ].join("\n"));
+  return [
+    niche.label,
+    `Week of ${pack.pack.week.label}. Theme: ${pack.pack.week.name}.`,
+    "Post these four, in this order. Leave the other folders for later.",
+    "",
+    blocks.join("\n\n"),
+    "",
+  ].join("\n");
 }
 
 export function checkLibrary(dir, library) {
@@ -54,6 +71,11 @@ export function checkLibrary(dir, library) {
   if (!existsSync(indexPath)) errors.push("The index is missing.");
   else if (!readFileSync(indexPath, "utf8").includes(`Post this niche: ${library.featured.label}.`)) {
     errors.push("The index does not name this week's niche.");
+  }
+  const sheetPath = join(dir, "this-week.txt");
+  if (!existsSync(sheetPath)) errors.push("this-week.txt is missing.");
+  else if (!readFileSync(sheetPath, "utf8").includes("Post these four")) {
+    errors.push("this-week.txt does not list the four posts.");
   }
   for (const pack of library.packs) {
     try {
@@ -82,6 +104,7 @@ export function parseArgs(argv, env = process.env) {
 async function writeLibrary(outDir, library) {
   await mkdir(outDir, { recursive: true });
   await writeFile(join(outDir, "index.txt"), library.index);
+  await writeFile(join(outDir, "this-week.txt"), library.sheet);
   for (const pack of library.packs) {
     const folder = join(outDir, pack.niche.slug);
     await mkdir(folder, { recursive: true });

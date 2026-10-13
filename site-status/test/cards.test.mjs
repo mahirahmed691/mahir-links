@@ -16,6 +16,7 @@ test("cards use the channel sizes and keep the sentence", () => {
   assert.match(html, /height: 630px/);
   assert.match(html, /Thursday · LinkedIn/);
   assert.match(html, new RegExp(niches[0].label));
+  assert.match(html, /class="sheet"/);
   const escaped = post.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   assert.ok(html.includes(escaped));
   assert.equal(cardSizes.Instagram.width, 1080);
@@ -53,6 +54,9 @@ test("the library keeps every niche and names the one to post", () => {
   assert.equal(library.packs.length, niches.length);
   assert.match(library.index, new RegExp(`Post this niche: ${niche.label}`));
   assert.match(library.index, /48 pictures/);
+  assert.match(library.sheet, /Post these four/);
+  assert.match(library.sheet, /monday-linkedin\.png/);
+  assert.match(library.sheet, /friday-facebook\.png/);
   const home = library.packs.find((pack) => pack.niche.slug === "home-bakery");
   const instagram = home.files.find((file) => file.post.channel === "Instagram");
   const linkedin = home.files.find((file) => file.post.channel === "LinkedIn");

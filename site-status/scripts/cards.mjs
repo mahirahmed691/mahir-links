@@ -68,32 +68,36 @@ export function cardHtml(post, nicheLabel, who = author) {
   if (!nicheLabel) throw new Error("A card needs its niche.");
   const portrait = size.height > size.width;
   const type = typeSize(post.text, size);
-  const title = portrait ? 104 : 84;
+  const title = portrait ? 128 : 78;
   return `<!doctype html><html><head><meta charset="utf-8">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,800&family=Instrument+Sans:wght@500;600&display=swap">
 <style>
   * { box-sizing: border-box; margin: 0; }
   html, body { width: ${size.width}px; height: ${size.height}px; overflow: hidden; }
-  body { padding: ${portrait ? 96 : 56}px; display: flex; flex-direction: column;
-    background: #F4F2FF; color: #14102A; font-family: "Instrument Sans", sans-serif;
+  body { display: flex; flex-direction: column; background: #F4F2FF; color: #14102A;
+    font-family: "Instrument Sans", sans-serif; }
+  .stage { flex: 1; display: flex; flex-direction: column; justify-content: space-between;
+    padding: ${portrait ? "84px 84px 56px" : "48px 56px 36px"};
     background-image: radial-gradient(rgba(111, 75, 255, 0.18) 1.5px, transparent 1.8px); background-size: 28px 28px; }
   .pill { align-self: flex-start; background: #FFD23F; border: 3px solid #14102A; border-radius: 999px;
     padding: 10px 22px; font-weight: 600; font-size: ${portrait ? 32 : 24}px; }
-  h1 { margin-top: ${portrait ? 56 : 28}px; font: 800 ${title}px/0.92 "Bricolage Grotesque", "Arial Narrow", sans-serif;
-    font-stretch: 78%; letter-spacing: -0.04em; max-width: ${portrait ? "8em" : "none"}; }
-  .rule { width: ${portrait ? 220 : 160}px; height: 12px; margin-top: ${portrait ? 36 : 22}px;
-    background: #6F4BFF; border: 3px solid #14102A; }
-  p { margin-top: ${portrait ? 48 : 24}px; max-width: ${portrait ? "16em" : "34em"};
-    font: 600 ${type}px/1.25 "Instrument Sans", sans-serif; }
-  footer { margin-top: auto; display: flex; justify-content: space-between; align-items: baseline;
-    font-size: ${portrait ? 32 : 24}px; font-weight: 600; padding-top: 28px; }
-  footer b { font: 800 ${portrait ? 40 : 30}px/1 "Bricolage Grotesque", "Arial Narrow", sans-serif; }
+  h1 { font: 800 ${title}px/0.9 "Bricolage Grotesque", "Arial Narrow", sans-serif;
+    font-stretch: 78%; letter-spacing: -0.045em; max-width: ${portrait ? "7em" : "12em"}; }
+  .sheet { background: #14102A; color: #F4F2FF; padding: ${portrait ? "64px 84px 72px" : "36px 56px 40px"}; }
+  p { max-width: ${portrait ? "16em" : "36em"}; font: 600 ${type}px/1.28 "Instrument Sans", sans-serif; }
+  footer { display: flex; justify-content: space-between; align-items: baseline; margin-top: ${portrait ? 48 : 28}px;
+    font-size: ${portrait ? 30 : 22}px; font-weight: 600; }
+  footer b { font: 800 ${portrait ? 36 : 28}px/1 "Bricolage Grotesque", "Arial Narrow", sans-serif; }
+  footer span { color: #FFD23F; }
 </style></head><body>
-  <div class="pill">${escapeHtml(post.day)} · ${escapeHtml(post.channel)}</div>
-  <h1>${escapeHtml(nicheLabel)}</h1>
-  <div class="rule"></div>
-  <p>${escapeHtml(post.text)}</p>
-  <footer><b>${escapeHtml(who.name)}</b><span>${escapeHtml(who.site)}</span></footer>
+  <section class="stage">
+    <div class="pill">${escapeHtml(post.day)} · ${escapeHtml(post.channel)}</div>
+    <h1>${escapeHtml(nicheLabel)}</h1>
+  </section>
+  <section class="sheet">
+    <p>${escapeHtml(post.text)}</p>
+    <footer><b>${escapeHtml(who.name)}</b><span>${escapeHtml(who.site)}</span></footer>
+  </section>
 </body></html>
 `;
 }
