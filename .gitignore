@@ -5,3 +5,5 @@ node_modules/
 .vercel
 site-status/pitch.txt
 site-status/pitch-request.json
+site-status/content/
+site-status/content-request.json

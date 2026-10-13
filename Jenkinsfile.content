@@ -1,0 +1,46 @@
+// One niche in, one week of posts out. Paste them yourself. This job does not publish.
+// Point a Jenkins Pipeline job at this file. The agent needs Node.js 20 or newer.
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  parameters {
+    choice(
+      name: 'NICHE',
+      choices: "All niches\nHome bakery\nCoffee shop\nRestaurant\nDessert shop\nModest fashion\nCar hire\nHoliday let\nCoaching\nSalon\nTakeaway\nFlorist\nTrade business",
+      description: 'Niche for this week of posts. All niches writes one file each. Post one niche, and keep the rest.'
+    )
+  }
+
+  stages {
+    stage('Write the week of posts') {
+      steps {
+        script {
+          def niche = params.NICHE?.trim()
+          if (!niche) {
+            error 'Pick a niche from the list, then run the job again.'
+          }
+          writeFile file: 'site-status/content-request.json', text: groovy.json.JsonOutput.toJson([niche: niche])
+        }
+        dir('site-status') {
+          sh 'node --version'
+          sh 'node scripts/content.mjs content-request.json content'
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      archiveArtifacts artifacts: 'site-status/content/*.txt', onlyIfSuccessful: true
+    }
+    cleanup {
+      sh 'rm -rf site-status/content site-status/content-request.json'
+    }
+  }
+}
